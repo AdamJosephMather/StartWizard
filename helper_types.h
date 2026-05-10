@@ -700,13 +700,3 @@ static Color stringToColor(std::string s, bool& worked) {
 	
 	return c;
 }
-
-static std::wstring widen(const std::string& s) {
-	std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> conv;
-	return conv.from_bytes(s);
-}
-
-static std::string narrow(const std::wstring& s) {
-	std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> conv;
-	return conv.to_bytes(s);
-}
