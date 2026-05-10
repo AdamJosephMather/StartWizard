@@ -99,6 +99,7 @@ struct WindowInfo {
 
 std::vector<Entry> entries;
 int selected_id = 0;
+int scroll_vert = 0;
 
 std::vector<App> apps;
 std::wstring windir;
@@ -404,6 +405,7 @@ bool equalsIgnoreCase(const std::wstring& wa, const std::wstring& wb) {
 void recalculate() {
 	entries.clear();
 	selected_id = 0;
+	scroll_vert = 0;
 	
 	std::string find;
 	current_search.toUTF8String(find);
@@ -657,19 +659,23 @@ void render() {
 	
 	DrawRect(texty+cursor_offset+sep, texty, cursorWidth, TextH, theme.main_text_color);
 	
-	int start = selected_id - (FIT/2);
-	if (start+FIT > entries.size()) {
-		start = entries.size()-FIT;
+	if (selected_id - scroll_vert < 3) {
+		scroll_vert = selected_id-2;
 	}
-	
-	if (start < 0) {
-		start = 0;
+	if (selected_id - scroll_vert > FIT-3) {
+		scroll_vert = selected_id-FIT+3;
+	}
+	if (scroll_vert+FIT > entries.size()) {
+		scroll_vert = entries.size()-FIT;
+	}
+	if (scroll_vert < 0) {
+		scroll_vert = 0;
 	}
 	
 	int offsety = (indiv-TextRenderer::get_text_height())/2;
 	int indent = 4*sep;
 	
-	for (int i = start; i < fmin(start + FIT, entries.size()); i++) {
+	for (int i = scroll_vert; i < fmin(scroll_vert + FIT, entries.size()); i++) {
 		Color* back = theme.main_background_color;
 		Color* txt = theme.main_text_color;
 		
@@ -679,7 +685,7 @@ void render() {
 		}
 		
 		auto e = entries[i];
-		int y = top_h+sep*2 + lstTotal*(i-start);
+		int y = top_h+sep*2 + lstTotal*(i-scroll_vert);
 		
 		if (e.hwnd != NULL) {
 			DrawRoundedRect(sep+indent, y, WIN_WIDTH-indent-sep*2, indiv, RAD_SMALL, back, theme.border, 5);
@@ -1040,6 +1046,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 	}else if (key == GLFW_KEY_DOWN) {
 		if (entries.size() == 0) {
 			selected_id = 0;
+			scroll_vert = 0;
 		}
 		
 		selected_id += 1;
@@ -1049,11 +1056,13 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 	}else if (key == GLFW_KEY_UP) {
 		if (entries.size() == 0) {
 			selected_id = 0;
+			scroll_vert = 0;
 		}
 		
 		selected_id -= 1;
 		if (selected_id < 0) {
 			selected_id = 0;
+			scroll_vert = 0;
 		}
 	}else if (key == GLFW_KEY_TAB) {
 		if (selected_id < entries.size()) {
