@@ -337,24 +337,13 @@ void GetAllApps() {
 	CoUninitialize();
 }
 
-bool isSubsequence(const std::string& in, const std::string& srch) {
-	if (srch.empty()) return true;
-	size_t find_idx = 0;
-	for (char c : in) {
-		if (find_idx < srch.length() && c == srch[find_idx]) {
-			find_idx++;
-		}
-	}
-	return find_idx == srch.length();
-}
-
 bool fuzzySearch(App app, std::string find) {
 	std::string srch = "";
 	std::string in = toLower(app.name_str);
 	
 	for (char c : find) {
 		if (c == ' ' || c == '.' || c == ',' || c == '_') {
-			if (!isSubsequence(in, srch)) {
+			if (in.find(srch) == std::string::npos) {
 				return false;
 			}
 			srch = "";
@@ -364,7 +353,7 @@ bool fuzzySearch(App app, std::string find) {
 	}
 	
 	if (srch != "") {
-		if (!isSubsequence(in, srch)) {
+		if (in.find(srch) == std::string::npos) {
 			return false;
 		}
 	}
