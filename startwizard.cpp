@@ -621,6 +621,9 @@ void render() {
 	DrawRoundedRect(0, 0, WIN_WIDTH, sep*2 + top_h + lstTotal*fmin(FIT, entries.size()), theme.extras_background_color, theme.border, 15, topRad, topRad, bottomRad, bottomRad);
 	DrawRoundedRect(sep, sep, WIN_WIDTH-sep*2, top_h, RAD_BIG, theme.main_background_color, theme.border, 15);
 	
+	glEnable(GL_SCISSOR_TEST);
+	glScissor(sep, 0, WIN_WIDTH-2*sep, WIN_HEIGHT);
+	
 	int TextH = TextRenderer::get_text_height();
 	int texty = (top_h - TextH) / 2 + sep;
 	
@@ -706,6 +709,8 @@ void render() {
 			
 		}
 	}
+	
+	glDisable(GL_SCISSOR_TEST);
 }
 
 void setSizes() {
