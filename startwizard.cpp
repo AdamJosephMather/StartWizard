@@ -661,8 +661,16 @@ void render() {
 	if (start < 0) {
 		start = 0;
 	}else if (start+FIT > entries.size()) {
-		start = entries.size()-FIT;
+		start = fmax(0, entries.size()-FIT);
 	}
+	
+	//0.  @
+	//1.  @
+	//2.  @
+	//3.  @
+	//4. [@]
+	//5.  @ <--
+	//6.  @
 	
 	int offsety = (indiv-TextRenderer::get_text_height())/2;
 	int indent = 4*sep;
