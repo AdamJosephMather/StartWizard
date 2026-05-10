@@ -12,6 +12,7 @@
 #include <unicode/ustream.h>
 #include <filesystem>
 #include <chrono>
+#include <appmodel.h>
 
 namespace fs = std::filesystem;
 
@@ -78,6 +79,7 @@ struct Entry {
 	std::string name_str;
 	GLuint tex = 0;
 	std::wstring exe;
+	std::wstring aumid;
 	HWND hwnd = NULL;
 	std::vector<SubEntry> children;
 	std::string copy = "";
@@ -88,6 +90,7 @@ struct App {
 	icu::UnicodeString name;
 	std::wstring exe;
 	std::string name_str;
+	std::wstring aumid;
 	GLuint textureID;
 };
 
@@ -95,6 +98,7 @@ struct WindowInfo {
 	HWND hwnd;
 	std::wstring title;
 	std::wstring exe;
+	std::wstring aumid;
 };
 
 std::vector<Entry> entries;
@@ -246,6 +250,22 @@ std::wstring normalizePath(std::wstring path) {
 	return path;
 }
 
+std::wstring GetWindowAUMID(HWND hwnd) {
+	IPropertyStore* pps = nullptr;
+	if (FAILED(SHGetPropertyStoreForWindow(hwnd, IID_PPV_ARGS(&pps)))) return L"";
+	
+	PROPERTYKEY PKEY_AUMI = { {0x9F4C2855,0x9F79,0x4B39,{0xA8,0xD0,0xE1,0xD4,0x2D,0xE1,0xD5,0xF3}}, 5 };
+	PROPVARIANT pv;
+	PropVariantInit(&pv);
+	std::wstring result;
+	if (SUCCEEDED(pps->GetValue(PKEY_AUMI, &pv)) && pv.vt == VT_LPWSTR) {
+		result = pv.pwszVal;
+	}
+	PropVariantClear(&pv);
+	pps->Release();
+	return result;
+}
+
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
 	if (!IsWindowVisible(hwnd)) return TRUE;
 
@@ -265,10 +285,11 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
 		}
 		CloseHandle(hProcess);
 	}
-
-	if (!exePath.empty()) {
+	
+	std::wstring aumid = GetWindowAUMID(hwnd);
+	if (!exePath.empty() || !aumid.empty()) {
 		std::vector<WindowInfo>* windows = reinterpret_cast<std::vector<WindowInfo>*>(lParam);
-		windows->push_back({ hwnd, title, exePath });
+		windows->push_back({ hwnd, title, exePath, aumid });
 	}
 
 	return TRUE;
@@ -278,6 +299,26 @@ std::vector<WindowInfo> EnumerateOpenWindows() {
 	std::vector<WindowInfo> windows;
 	EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&windows));
 	return windows;
+}
+
+std::wstring ResolveAUMIDPath(const std::wstring& aumid) {
+	// Matches {GUID}\some\path.exe style AUMIDs
+	if (aumid.empty() || aumid[0] != L'{') return L"";
+	size_t close = aumid.find(L'}');
+	if (close == std::wstring::npos) return L"";
+
+	std::wstring guidStr = aumid.substr(1, close - 1);
+	std::wstring rest = aumid.substr(close + 2);
+
+	GUID guid;
+	if (FAILED(CLSIDFromString((L"{" + guidStr + L"}").c_str(), &guid))) return L"";
+
+	PWSTR folderPath = nullptr;
+	if (FAILED(SHGetKnownFolderPath(guid, 0, nullptr, &folderPath))) return L"";
+	
+	std::wstring result = std::wstring(folderPath) + L"\\" + rest;
+	CoTaskMemFree(folderPath);
+	return normalizePath(result);
 }
 
 void GetAllApps() {
@@ -291,6 +332,11 @@ void GetAllApps() {
 	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 	if (FAILED(hr)) return;
 
+	PROPERTYKEY PKEY_AUMI = { {0x9F4C2855,0x9F79,0x4B39,{0xA8,0xD0,0xE1,0xD4,0x2D,0xE1,0xD5,0xF3}}, 5 };
+
+	std::set<std::string> seenNames;
+
+	// --- Pass 1: .lnk scan (reliable exe paths for Win32 apps) ---
 	std::vector<std::wstring> startMenuPaths;
 	PWSTR path = nullptr;
 	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_CommonPrograms, 0, NULL, &path))) {
@@ -302,69 +348,143 @@ void GetAllApps() {
 		CoTaskMemFree(path);
 	}
 
-	std::set<std::wstring> seenNames;
-
 	for (const auto& basePath : startMenuPaths) {
 		if (!fs::exists(basePath)) continue;
-		
+
 		std::error_code ec;
 		for (const auto& entry : fs::recursive_directory_iterator(basePath, ec)) {
 			if (ec) continue;
-			if (entry.is_regular_file() && entry.path().extension() == ".lnk") {
-				std::wstring name_ws = entry.path().stem().wstring();
-				if (seenNames.count(name_ws)) continue;
-				seenNames.insert(name_ws);
+			if (!entry.is_regular_file() || entry.path().extension() != ".lnk") continue;
 
-				App a;
-				a.exe = normalizePath(entry.path().wstring());
-				a.name = icu::UnicodeString(name_ws.c_str());
-				a.name.toUTF8String(a.name_str);
-				
-				IShellLinkW* psl = nullptr;
-				if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&psl)))) {
-					IPersistFile* ppf = nullptr;
-					if (SUCCEEDED(psl->QueryInterface(IID_PPV_ARGS(&ppf)))) {
-						if (SUCCEEDED(ppf->Load(a.exe.c_str(), STGM_READ))) {
-							WCHAR szGotPath[MAX_PATH];
-							// Get the raw path (which may contain %variables%)
-							if (SUCCEEDED(psl->GetPath(szGotPath, MAX_PATH, NULL, SLGP_UNCPRIORITY | SLGP_RAWPATH))) {
-								
-								// --- EXPAND ENVIRONMENT STRINGS ---
-								WCHAR szExpandedPath[MAX_PATH];
-								if (ExpandEnvironmentStringsW(szGotPath, szExpandedPath, MAX_PATH) > 0) {
-									a.exe = normalizePath(szExpandedPath);
-								} else {
-									a.exe = normalizePath(szGotPath);
-								}
+			std::wstring name_ws = entry.path().stem().wstring();
+			std::string name_str;
+			icu::UnicodeString(name_ws.c_str()).toUTF8String(name_str);
+			if (seenNames.count(name_str)) continue;
+
+			App a;
+			a.exe = normalizePath(entry.path().wstring());
+			a.name = icu::UnicodeString(name_ws.c_str());
+			a.name_str = name_str;
+
+			IShellLinkW* psl = nullptr;
+			if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&psl)))) {
+				IPersistFile* ppf = nullptr;
+				if (SUCCEEDED(psl->QueryInterface(IID_PPV_ARGS(&ppf)))) {
+					if (SUCCEEDED(ppf->Load(a.exe.c_str(), STGM_READ))) {
+						WCHAR szGotPath[MAX_PATH];
+						if (SUCCEEDED(psl->GetPath(szGotPath, MAX_PATH, NULL, SLGP_UNCPRIORITY | SLGP_RAWPATH))) {
+							WCHAR szExpandedPath[MAX_PATH];
+							if (ExpandEnvironmentStringsW(szGotPath, szExpandedPath, MAX_PATH) > 0) {
+								a.exe = normalizePath(szExpandedPath);
+							} else {
+								a.exe = normalizePath(szGotPath);
 							}
 						}
-						ppf->Release();
-					}
-					psl->Release();
-				}
 
-				IShellItem* pItem = nullptr;
-				if (SUCCEEDED(SHCreateItemFromParsingName(a.exe.c_str(), NULL, IID_PPV_ARGS(&pItem)))) {
-					IShellItemImageFactory* pImageFactory = nullptr;
-					if (SUCCEEDED(pItem->QueryInterface(IID_PPV_ARGS(&pImageFactory)))) {
-						int iconSize = TextRenderer::get_text_height();
-						if (iconSize <= 0) iconSize = 32;
-						SIZE size = { iconSize, iconSize };
-						HBITMAP hBitmap;
-						if (SUCCEEDED(pImageFactory->GetImage(size, SIIGBF_ICONONLY, &hBitmap))) {
-							a.textureID = HBitmapToTexture(hBitmap);
-							DeleteObject(hBitmap);
-						} else {
-							a.textureID = 0;
+						IPropertyStore* pps = nullptr;
+						if (SUCCEEDED(SHGetPropertyStoreFromParsingName(
+								entry.path().wstring().c_str(), nullptr, GPS_DEFAULT, IID_PPV_ARGS(&pps)))) {
+							PROPVARIANT pv;
+							PropVariantInit(&pv);
+							if (SUCCEEDED(pps->GetValue(PKEY_AUMI, &pv)) && pv.vt == VT_LPWSTR) {
+								a.aumid = pv.pwszVal;
+							}
+							PropVariantClear(&pv);
+							pps->Release();
 						}
-						pImageFactory->Release();
 					}
-					pItem->Release();
+					ppf->Release();
 				}
-				apps.push_back(a);
+				psl->Release();
 			}
+
+			IShellItem* pItem = nullptr;
+			if (SUCCEEDED(SHCreateItemFromParsingName(a.exe.c_str(), NULL, IID_PPV_ARGS(&pItem)))) {
+				IShellItemImageFactory* pImageFactory = nullptr;
+				if (SUCCEEDED(pItem->QueryInterface(IID_PPV_ARGS(&pImageFactory)))) {
+					int iconSize = TextRenderer::get_text_height();
+					if (iconSize <= 0) iconSize = 32;
+					SIZE size = { iconSize, iconSize };
+					HBITMAP hBitmap;
+					if (SUCCEEDED(pImageFactory->GetImage(size, SIIGBF_ICONONLY, &hBitmap))) {
+						a.textureID = HBitmapToTexture(hBitmap);
+						DeleteObject(hBitmap);
+					} else {
+						a.textureID = 0;
+					}
+					pImageFactory->Release();
+				}
+				pItem->Release();
+			}
+
+			seenNames.insert(name_str);
+			apps.push_back(a);
 		}
 	}
+
+	// --- Pass 2: FOLDERID_AppsFolder (catches UWP/MSIX apps missing from .lnk scan) ---
+	IShellItem* pAppsFolder = nullptr;
+	if (SUCCEEDED(SHGetKnownFolderItem(FOLDERID_AppsFolder, KF_FLAG_DEFAULT, nullptr, IID_PPV_ARGS(&pAppsFolder)))) {
+		IEnumShellItems* pEnum = nullptr;
+		if (SUCCEEDED(pAppsFolder->BindToHandler(nullptr, BHID_EnumItems, IID_PPV_ARGS(&pEnum)))) {
+			IShellItem* pItem = nullptr;
+			while (pEnum->Next(1, &pItem, nullptr) == S_OK) {
+				App a;
+
+				LPWSTR pName = nullptr;
+				if (SUCCEEDED(pItem->GetDisplayName(SIGDN_NORMALDISPLAY, &pName))) {
+					a.name = icu::UnicodeString(pName);
+					a.name.toUTF8String(a.name_str);
+					CoTaskMemFree(pName);
+				}
+
+				if (a.name_str.empty() || seenNames.count(a.name_str)) {
+					pItem->Release();
+					continue;
+				}
+
+				IPropertyStore* pps = nullptr;
+				if (SUCCEEDED(pItem->BindToHandler(nullptr, BHID_PropertyStore, IID_PPV_ARGS(&pps)))) {
+					PROPVARIANT pv;
+					PropVariantInit(&pv);
+					if (SUCCEEDED(pps->GetValue(PKEY_AUMI, &pv)) && pv.vt == VT_LPWSTR) {
+						a.aumid = pv.pwszVal;
+					}
+					PropVariantClear(&pv);
+					pps->Release();
+				}
+
+				LPWSTR pPath = nullptr;
+				if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &pPath))) {
+					a.exe = normalizePath(pPath);
+					CoTaskMemFree(pPath);
+				}
+				if (a.exe.empty()) {
+					a.exe = ResolveAUMIDPath(a.aumid);
+				}
+
+				IShellItemImageFactory* pImageFactory = nullptr;
+				if (SUCCEEDED(pItem->QueryInterface(IID_PPV_ARGS(&pImageFactory)))) {
+					int iconSize = TextRenderer::get_text_height();
+					if (iconSize <= 0) iconSize = 32;
+					SIZE size = { iconSize, iconSize };
+					HBITMAP hBitmap;
+					if (SUCCEEDED(pImageFactory->GetImage(size, SIIGBF_ICONONLY, &hBitmap))) {
+						a.textureID = HBitmapToTexture(hBitmap);
+						DeleteObject(hBitmap);
+					}
+					pImageFactory->Release();
+				}
+
+				seenNames.insert(a.name_str);
+				apps.push_back(a);
+				pItem->Release();
+			}
+			pEnum->Release();
+		}
+		pAppsFolder->Release();
+	}
+
 	CoUninitialize();
 }
 
@@ -402,6 +522,33 @@ bool equalsIgnoreCase(const std::wstring& wa, const std::wstring& wb) {
 	});
 }
 
+std::wstring GetPackageFamilyFromExePath(const std::wstring& exePath) {
+	// Extract folder name from WindowsApps path
+	// Path looks like: C:\Program Files\WindowsApps\<PackageFullName>\foo.exe
+	const std::wstring marker = L"\\WindowsApps\\";
+	size_t start = exePath.find(marker);
+	if (start == std::wstring::npos) return L"";
+	
+	start += marker.length();
+	size_t end = exePath.find(L'\\', start);
+	if (end == std::wstring::npos) return L"";
+	
+	std::wstring packageFullName = exePath.substr(start, end - start);
+	
+	WCHAR familyName[PACKAGE_FAMILY_NAME_MAX_LENGTH + 1] = {};
+	UINT32 len = PACKAGE_FAMILY_NAME_MAX_LENGTH + 1;
+	if (PackageFamilyNameFromFullName(packageFullName.c_str(), &len, familyName) == ERROR_SUCCESS) {
+		return familyName;
+	}
+	return L"";
+}
+
+std::wstring GetFamilyFromAUMID(const std::wstring& aumid) {
+	size_t bang = aumid.find(L'!');
+	if (bang == std::wstring::npos) return aumid;
+	return aumid.substr(0, bang);
+}
+
 void recalculate() {
 	entries.clear();
 	selected_id = 0;
@@ -421,6 +568,12 @@ void recalculate() {
 	
 	auto openWindows = EnumerateOpenWindows();
 	
+	std::cout << "\n\n\n\nWindows:\n";
+	
+	for (auto w : openWindows) {
+		std::cout << std::string(w.title.begin(), w.title.end()) << " - " << std::string(w.exe.begin(), w.exe.end()) << " - " << std::string(w.aumid.begin(), w.aumid.end()) << "\n";
+	}
+	
 	for (const auto& app : apps) {
 		if (fuzzySearch(app, find)) {
 			Entry e;
@@ -428,15 +581,36 @@ void recalculate() {
 			e.name_str = app.name_str;
 			e.exe = app.exe;
 			e.tex = app.textureID;
+			e.aumid = app.aumid;
 			
 			for (auto win : openWindows) {
-				if (equalsIgnoreCase(win.exe, app.exe)) {
+				bool exeMatch   = !win.exe.empty()   && equalsIgnoreCase(win.exe, app.exe);
+				bool aumidMatch = !win.aumid.empty() && !app.aumid.empty() && equalsIgnoreCase(win.aumid, app.aumid);
+				bool pkgMatch   = !app.aumid.empty() && !win.exe.empty()
+								  && equalsIgnoreCase(GetPackageFamilyFromExePath(win.exe),
+													 GetFamilyFromAUMID(app.aumid));
+				bool exWinaumApp = !win.exe.empty()  && equalsIgnoreCase(win.exe, app.aumid);
+				bool exAppaumWin = !win.aumid.empty()&& equalsIgnoreCase(win.aumid, app.exe);
+				
+				if (exeMatch || aumidMatch || pkgMatch || exWinaumApp || exAppaumWin) {
 					e.children.push_back({win.hwnd, icu::UnicodeString::fromUTF8(std::string(win.title.begin(), win.title.end()))});
 				}
 			}
 			
+//			for (auto win : openWindows) {
+//				if ((!win.exe.empty() && (equalsIgnoreCase(win.exe, app.exe) || equalsIgnoreCase(win.exe, app.aumid))) || (!win.aumid.empty() && (equalsIgnoreCase(win.aumid, app.aumid) || equalsIgnoreCase(win.aumid, app.exe)))) {
+//					e.children.push_back({win.hwnd, icu::UnicodeString::fromUTF8(std::string(win.title.begin(), win.title.end()))});
+//				}
+//			}
+			
 			entries.push_back(e);
 		}
+	}
+	
+	std::cout << "\n\n\n\nEntries:\n";
+	
+	for (auto e : entries) {
+		std::cout << e.name_str << " - " << std::string(e.exe.begin(), e.exe.end()) << " - " << std::string(e.aumid.begin(), e.aumid.end()) << "\n";
 	}
 	
 	std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
