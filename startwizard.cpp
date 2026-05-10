@@ -76,10 +76,12 @@ struct SubEntry {
 struct Entry {
 	icu::UnicodeString name;
 	std::string name_str;
-	GLuint tex;
+	GLuint tex = 0;
 	std::wstring exe;
+	HWND hwnd = NULL;
 	std::vector<SubEntry> children;
 	std::string copy = "";
+	bool open = false;
 };
 
 struct App {
@@ -134,12 +136,22 @@ GLuint HBitmapToTexture(HBITMAP hBitmap) {
 	ReleaseDC(NULL, hdc);
 
 	// Convert BGR (Windows) to RGB (OpenGL) and handle Alpha
+	bool hasAlpha = false;
 	for (auto& pixel : pixels) {
 		uint32_t a = (pixel >> 24) & 0xFF;
 		uint32_t r = (pixel >> 16) & 0xFF;
 		uint32_t g = (pixel >> 8) & 0xFF;
 		uint32_t b = pixel & 0xFF;
+		if (a > 0) hasAlpha = true;
 		pixel = (a << 24) | (b << 16) | (g << 8) | r;
+	}
+
+	// If no alpha was found in any pixel, force all pixels to be opaque.
+	// This handles 24-bit or 32-bit bitmaps where the alpha channel is unused (all zero).
+	if (!hasAlpha) {
+		for (auto& pixel : pixels) {
+			pixel |= 0xFF000000;
+		}
 	}
 
 	GLuint textureID;
@@ -160,6 +172,14 @@ bool launch_app(const Entry& entry) {
 		curs.head_char = current_search.length();
 		curs.anchor_char = curs.head_char;
 		return false;
+	}else if (entry.hwnd != NULL) {
+		if (IsIconic(entry.hwnd)) {
+			ShowWindow(entry.hwnd, SW_RESTORE);
+		}
+		
+		SetForegroundWindow(entry.hwnd);
+		SetFocus(entry.hwnd);
+		return true;
 	}
 	
 	std::cout << "Launching: " << std::string(entry.exe.begin(), entry.exe.end()) << "\n";
@@ -568,6 +588,19 @@ void DrawRoundedRect(float x, float y, float w, float h, Color* color, Color* bc
 	}
 }
 
+void DrawTexturedRect(float x, float y, float w, float h, GLuint textureID) {
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, textureID);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+	glBegin(GL_QUADS);
+	glTexCoord2f(0, 0); glVertex2f(x, y);
+	glTexCoord2f(1, 0); glVertex2f(x + w, y);
+	glTexCoord2f(1, 1); glVertex2f(x + w, y + h);
+	glTexCoord2f(0, 1); glVertex2f(x, y + h);
+	glEnd();
+	glDisable(GL_TEXTURE_2D);
+}
+
 void render() {
 	int sep = RAD_SMALL/2;
 	
@@ -629,6 +662,7 @@ void render() {
 	}
 	
 	int offsety = (indiv-TextRenderer::get_text_height())/2;
+	int indent = 4*sep;
 	
 	for (int i = start; i < fmin(start + FIT, entries.size()); i++) {
 		Color* back = theme.main_background_color;
@@ -641,20 +675,48 @@ void render() {
 		
 		auto e = entries[i];
 		int y = top_h+sep*2 + lstTotal*(i-start);
-		DrawRoundedRect(sep, y, WIN_WIDTH-sep*2, indiv, RAD_SMALL, back, theme.border, 5);
-		TextRenderer::draw_text(RAD_SMALL+sep, y + offsety, e.name, txt);
+		
+		if (e.hwnd != NULL) {
+			DrawRoundedRect(sep+indent, y, WIN_WIDTH-indent-sep*2, indiv, RAD_SMALL, back, theme.border, 5);
+		}else{
+			DrawRoundedRect(sep, y, WIN_WIDTH-sep*2, indiv, RAD_SMALL, back, theme.border, 5);
+		}
+		
+		int textX;
+		if (e.hwnd != NULL) {
+			textX = RAD_SMALL + sep + indent;
+		}else{
+			textX = RAD_SMALL + sep;
+		}
+		
+		if (e.tex != 0) {
+			int iconSize = TextRenderer::get_text_height();
+			DrawTexturedRect(textX, y + offsety, iconSize, iconSize, e.tex);
+			textX += iconSize + sep;
+		}
+		
+		TextRenderer::draw_text(textX, y + offsety, e.name, txt);
+		
+		if (!e.children.empty()) {
+			if (e.open) {
+				TextRenderer::draw_text(WIN_WIDTH-RAD_SMALL-sep-TextRenderer::get_text_width(1), y + offsety, icu::UnicodeString::fromUTF8("v"), txt);
+			}else{
+				TextRenderer::draw_text(WIN_WIDTH-RAD_SMALL-sep-TextRenderer::get_text_width(1), y + offsety, icu::UnicodeString::fromUTF8(">"), txt);
+			}
+			
+		}
 	}
 }
 
-void show() {
-	if (glfwGetWindowAttrib(window, GLFW_VISIBLE)) return;
-	
-	glfwShowWindow(window);
-	glfwFocusWindow(window);
-	
+void setSizes() {
 	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 	
-	if (!monitor) return;
+	if (!monitor) {
+		TextRenderer::set_font_size(FONT_SIZE);
+		TextRenderer::init_font(FONT_PATH);
+		GetAllApps();
+		return;
+	}
 	
 	int monitorX, monitorY, monitorWidth, monitorHeight;
 	glfwGetMonitorWorkarea(monitor, &monitorX, &monitorY, &monitorWidth, &monitorHeight);
@@ -668,10 +730,10 @@ void show() {
 	int newSize = (int) (RAD_BIG / 2);
 	if (newSize != FONT_SIZE) {
 		FONT_SIZE = newSize;
-		GetAllApps();
 		std::cout << "Font size: " << FONT_SIZE << "\n";
 		TextRenderer::set_font_size(FONT_SIZE);
 		TextRenderer::init_font(FONT_PATH);
+		GetAllApps();
 	}
 	
 	if (RAD_SMALL < 5) {
@@ -686,11 +748,18 @@ void show() {
 	glfwSetWindowPos(window, WIN_X, WIN_Y);
 	
 	std::cout << "Set pos to " << WIN_X << ", " << WIN_Y << " - " << WIN_WIDTH << "x" << WIN_HEIGHT << "\n";
+}
+
+void show() {
+	if (glfwGetWindowAttrib(window, GLFW_VISIBLE)) return;
 	
+	glfwShowWindow(window);
+	glfwFocusWindow(window);
+	
+	setSizes();
 	
 	curs.anchor_char = 0;
 	curs.head_char = current_search.length();
-	
 	
 	recalculate();
 }
@@ -972,8 +1041,35 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 		if (selected_id < 0) {
 			selected_id = 0;
 		}
+	}else if (key == GLFW_KEY_TAB) {
+		if (selected_id < entries.size()) {
+			Entry e = entries[selected_id];
+			
+			if (!e.children.empty()) {
+				if (entries.size() > selected_id+1) {
+					if (entries[selected_id+1].hwnd != NULL) {
+						entries.erase(entries.begin()+selected_id+1, entries.begin()+selected_id+1+e.children.size());
+						entries[selected_id].open = false;
+						return;
+					}
+				}
+				
+				int index = selected_id+1;
+				for (auto sE : entries[selected_id].children) {
+					Entry new_e;
+					new_e.hwnd = sE.hwnd;
+					new_e.tex = e.tex;
+					new_e.name = sE.name;
+					sE.name.toUTF8String(new_e.name_str);
+					entries.insert(entries.begin()+index, new_e);
+					index += 1;
+				}
+				entries[selected_id].open = true;
+			}else if (launch_app(e)) {
+				hide();
+			}
+		}
 	}else if (key == GLFW_KEY_ENTER) {
-		std::cout << "Detect enter\n";
 		if (selected_id < entries.size()) {
 			std::cout << "Runnnnig: " << entries[selected_id].name_str << "\n";
 			
@@ -1015,9 +1111,6 @@ int main() {
 		std::cerr << "Failed to install hook!" << std::endl;
 		return 1;
 	}
-	
-	std::cout << "Collecting apps\n";
-	GetAllApps();
 	
 	std::cout << "Logic Active. Solo Win key is suppressed. Combos (Win+R, etc) still work." << std::endl;
 	std::cout << "Press Ctrl+C to exit." << std::endl;
@@ -1072,7 +1165,6 @@ int main() {
 	
 	
 	FONT_SIZE = 30;
-	TextRenderer::set_font_size(FONT_SIZE);
 	char path[MAX_PATH];
 	GetModuleFileNameA(NULL, path, MAX_PATH);
 	std::cout << "Executable path: " << path << std::endl;
@@ -1080,8 +1172,8 @@ int main() {
 	p.remove_filename();
 	std::string fontpath = p.string()+"CascadiaCode-Regular.ttf";
 	FONT_PATH = fontpath.c_str();
-	TextRenderer::init_font(FONT_PATH);
 	
+	setSizes();
 	
 	
 	while (!glfwWindowShouldClose(window)) {
