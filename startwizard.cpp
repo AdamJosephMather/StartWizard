@@ -83,6 +83,7 @@ struct Entry {
 	HWND hwnd = NULL;
 	std::vector<SubEntry> children;
 	std::string copy = "";
+	int matchrank = 0;
 	bool open = false;
 };
 
@@ -503,9 +504,9 @@ void GetAllApps() {
 	CoUninitialize();
 }
 
-bool fuzzySearch(App app, std::string find) {
+bool fuzzySearch(std::string inraw, std::string find) {
 	std::string srch = "";
-	std::string in = toLower(app.name_str);
+	std::string in = toLower(inraw);
 	
 	for (char c : find) {
 		if (c == ' ' || c == '.' || c == ',' || c == '_') {
@@ -583,20 +584,20 @@ void recalculate() {
 	
 	auto openWindows = EnumerateOpenWindows();
 	
-	std::cout << "\n\n\n\nWindows:\n";
-	
-	for (auto w : openWindows) {
-		std::cout << std::string(w.title.begin(), w.title.end()) << " - " << std::string(w.exe.begin(), w.exe.end()) << " - " << std::string(w.aumid.begin(), w.aumid.end()) << "\n";
-	}
-	
 	for (const auto& app : apps) {
-		if (fuzzySearch(app, find)) {
+		bool matchfrst = fuzzySearch(app.name_str, find);
+		bool matchsecond = fuzzySearch(std::string(app.exe.begin(), app.exe.end()), find);
+		
+		if (matchfrst || matchsecond) {
 			Entry e;
 			e.name = app.name;
 			e.name_str = app.name_str;
 			e.exe = app.exe;
 			e.tex = app.textureID;
 			e.aumid = app.aumid;
+			if (matchfrst) {
+				e.matchrank = 1;
+			}
 			
 			for (auto win : openWindows) {
 				bool exeMatch   = !win.exe.empty()   && equalsIgnoreCase(win.exe, app.exe);
@@ -612,20 +613,8 @@ void recalculate() {
 				}
 			}
 			
-//			for (auto win : openWindows) {
-//				if ((!win.exe.empty() && (equalsIgnoreCase(win.exe, app.exe) || equalsIgnoreCase(win.exe, app.aumid))) || (!win.aumid.empty() && (equalsIgnoreCase(win.aumid, app.aumid) || equalsIgnoreCase(win.aumid, app.exe)))) {
-//					e.children.push_back({win.hwnd, icu::UnicodeString::fromUTF8(std::string(win.title.begin(), win.title.end()))});
-//				}
-//			}
-			
 			entries.push_back(e);
 		}
-	}
-	
-	std::cout << "\n\n\n\nEntries:\n";
-	
-	for (auto e : entries) {
-		std::cout << e.name_str << " - " << std::string(e.exe.begin(), e.exe.end()) << " - " << std::string(e.aumid.begin(), e.aumid.end()) << "\n";
 	}
 	
 	std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
@@ -634,6 +623,9 @@ void recalculate() {
 		}
 		if (a.children.size() != b.children.size()) {
 			return a.children.size() > b.children.size();
+		}
+		if (a.matchrank != b.matchrank) {
+			return a.matchrank>b.matchrank;
 		}
 		return a.name_str < b.name_str;
 	});
