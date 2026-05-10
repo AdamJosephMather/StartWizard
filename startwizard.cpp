@@ -169,6 +169,25 @@ GLuint HBitmapToTexture(HBITMAP hBitmap) {
 	return textureID;
 }
 
+bool launch_via_aumid(const std::wstring& aumid) {
+	IApplicationActivationManager* paam = nullptr;
+	HRESULT hr = CoCreateInstance(CLSID_ApplicationActivationManager, nullptr,
+		CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&paam));
+	if (FAILED(hr)) return false;
+
+	DWORD pid = 0;
+	hr = paam->ActivateApplication(aumid.c_str(), nullptr, AO_NONE, &pid);
+	paam->Release();
+
+	if (FAILED(hr)) {
+		std::cout << "Failed to launch via AUMID\n";
+		return false;
+	}
+
+	std::cout << "Successfully launched via AUMID\n";
+	return true;
+}
+
 bool launch_app(const Entry& entry) {
 	if (!entry.copy.empty()) {
 		SetClipboardText(entry.copy);
@@ -177,18 +196,17 @@ bool launch_app(const Entry& entry) {
 		curs.head_char = current_search.length();
 		curs.anchor_char = curs.head_char;
 		return false;
-	}else if (entry.hwnd != NULL) {
+	} else if (entry.hwnd != NULL) {
 		if (IsIconic(entry.hwnd)) {
 			ShowWindow(entry.hwnd, SW_RESTORE);
 		}
-		
 		SetForegroundWindow(entry.hwnd);
 		SetFocus(entry.hwnd);
 		return true;
 	}
-	
+
 	std::cout << "Launching: " << std::string(entry.exe.begin(), entry.exe.end()) << "\n";
-	
+
 	if (!entry.exe.empty()) {
 		SHELLEXECUTEINFOW sei{};
 		sei.cbSize = sizeof(sei);
@@ -196,19 +214,16 @@ bool launch_app(const Entry& entry) {
 		sei.lpVerb = L"open";
 		sei.lpFile = entry.exe.c_str();
 		sei.nShow = SW_SHOWNORMAL;
-
-		if (!ShellExecuteExW(&sei)) {
-			std::cout << "Failed to launch exe\n";
-			return false;
+		if (ShellExecuteExW(&sei)) {
+			if (sei.hProcess) CloseHandle(sei.hProcess);
+			std::cout << "Successfully launched\n";
+			return true;
 		}
+		std::cout << "Exe launch failed, trying AUMID\n";
+	}
 
-		if (sei.hProcess) {
-			CloseHandle(sei.hProcess);
-		}
-		
-		std::cout << "Successfully launched\n";
-
-		return true;
+	if (!entry.aumid.empty()) {
+		return launch_via_aumid(entry.aumid);
 	}
 
 	return false;
