@@ -79,6 +79,7 @@ struct Entry {
 	GLuint tex;
 	std::wstring exe;
 	std::vector<SubEntry> children;
+	std::string copy = "";
 };
 
 struct App {
@@ -152,6 +153,15 @@ GLuint HBitmapToTexture(HBITMAP hBitmap) {
 }
 
 bool launch_app(const Entry& entry) {
+	if (!entry.copy.empty()) {
+		SetClipboardText(entry.copy);
+		current_search = icu::UnicodeString::fromUTF8(entry.copy);
+		recalculating = true;
+		curs.head_char = current_search.length();
+		curs.anchor_char = curs.head_char;
+		return false;
+	}
+	
 	std::cout << "Launching: " << std::string(entry.exe.begin(), entry.exe.end()) << "\n";
 	
 	if (!entry.exe.empty()) {
@@ -288,7 +298,7 @@ void GetAllApps() {
 				a.exe = normalizePath(entry.path().wstring());
 				a.name = icu::UnicodeString(name_ws.c_str());
 				a.name.toUTF8String(a.name_str);
-
+				
 				IShellLinkW* psl = nullptr;
 				if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&psl)))) {
 					IPersistFile* ppf = nullptr;
@@ -375,9 +385,17 @@ void recalculate() {
 	entries.clear();
 	selected_id = 0;
 	
-	icu::UnicodeString toSearch = current_search.toLower();
 	std::string find;
-	toSearch.toUTF8String(find);
+	current_search.toUTF8String(find);
+	find = toLower(find);
+	
+	auto res = calcExpression(current_search);
+	if (res.first){
+		Entry e;
+		e.name = doubleToUnicodeString_pretty(res.second);
+		e.name.toUTF8String(e.copy);
+		entries.push_back(e);
+	}
 	
 	auto openWindows = EnumerateOpenWindows();
 	
@@ -400,6 +418,9 @@ void recalculate() {
 	}
 	
 	std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+		if (a.copy.empty() != b.copy.empty()) {
+			return b.copy.empty();
+		}
 		if (a.children.size() != b.children.size()) {
 			return a.children.size() > b.children.size();
 		}
@@ -489,27 +510,93 @@ void DrawRoundedRect(float x, float y, float w, float h, float radius, Color* co
 	}
 }
 
-void render() {
-	int top_h = WIN_HEIGHT / 5;
+void DrawRoundBorder(int x, int y, int w, int h, Color* color, int segments, 
+					  float rTL, float rTR, float rBR, float rBL) {
+	glColor4f(color->r, color->g, color->b, color->a);
 	
+	// Using M_PI for consistency. Standard orientation:
+	// 0: Right, 0.5: Bottom, 1.0: Left, 1.5: Top (in radians * PI)
+	
+	drawCornerEdge(x + w - rTR, y + rTR,     1.5f * M_PI, 2.0f * M_PI, segments, rTR, border_width); // TR
+	drawCornerEdge(x + w - rBR, y + h - rBR, 0.0f,        0.5f * M_PI, segments, rBR, border_width); // BR
+	drawCornerEdge(x + rBL,     y + h - rBL, 0.5f * M_PI, 1.0f * M_PI, segments, rBL, border_width); // BL
+	drawCornerEdge(x + rTL,     y + rTL,     1.0f * M_PI, 1.5f * M_PI, segments, rTL, border_width); // TL
+	
+	// Straight Edges
+	DrawRect(x + rTL, y, w - rTL - rTR, border_width, color);               // Top edge
+	DrawRect(x + rBL, y + h - border_width, w - rBL - rBR, border_width, color); // Bottom edge
+	DrawRect(x, y + rTL, border_width, h - rTL - rBL, color);               // Left edge
+	DrawRect(x + w - border_width, y + rTR, border_width, h - rTR - rBR, color); // Right edge
+}
+
+void DrawRoundedRect(float x, float y, float w, float h, Color* color, Color* bcolor, 
+					 int segments, float rTL, float rTR, float rBR, float rBL) {
+	glColor4f(color->r, color->g, color->b, color->a);
+	
+	glBegin(GL_QUADS);
+		// Center Block (Vertical strip spanning the full height minus the largest corner offsets)
+		// This ensures the middle of the box is always filled.
+		float maxTop = (rTL > rTR) ? rTL : rTR;
+		float maxBottom = (rBL > rBR) ? rBL : rBR;
+
+		glVertex2f(x, y + maxTop);
+		glVertex2f(x + w, y + maxTop);
+		glVertex2f(x + w, y + h - maxBottom);
+		glVertex2f(x, y + h - maxBottom);
+
+		// Top Strip (Filling the gap between TL and TR corners)
+		glVertex2f(x + rTL, y);
+		glVertex2f(x + w - rTR, y);
+		glVertex2f(x + w - rTR, y + maxTop);
+		glVertex2f(x + rTL, y + maxTop);
+
+		// Bottom Strip (Filling the gap between BL and BR corners)
+		glVertex2f(x + rBL, y + h - maxBottom);
+		glVertex2f(x + w - rBR, y + h - maxBottom);
+		glVertex2f(x + w - rBR, y + h);
+		glVertex2f(x + rBL, y + h);
+	glEnd();
+
+	// Fill the 4 corners
+	drawCorner(x + w - rTR, y + rTR,     1.5f * M_PI, 2.0f * M_PI, segments, rTR); // TR
+	drawCorner(x + w - rBR, y + h - rBR, 0.0f,        0.5f * M_PI, segments, rBR); // BR
+	drawCorner(x + rBL,     y + h - rBL, 0.5f * M_PI, 1.0f * M_PI, segments, rBL); // BL
+	drawCorner(x + rTL,     y + rTL,     1.0f * M_PI, 1.5f * M_PI, segments, rTL); // TL
+	
+	if (bcolor != nullptr) {
+		DrawRoundBorder(x, y, w, h, bcolor, segments, rTL, rTR, rBR, rBL);
+	}
+}
+
+void render() {
 	int sep = RAD_SMALL/2;
-	int remaining = WIN_HEIGHT - top_h;
+	
+	int top_h = WIN_HEIGHT / 5 - sep*2;
+	
+	int remaining = WIN_HEIGHT - top_h - sep;
 	int lstTotal = (remaining/10);
 	
 	int FIT = 10;
 	int indiv = lstTotal - sep;
 	
-	DrawRoundedRect(0, 0, WIN_WIDTH, top_h, RAD_BIG, theme.main_background_color, theme.border, 15);
+	int bottomRad = RAD_SMALL+sep;
+	int topRad = RAD_BIG+sep;
+	if (entries.size() == 0) {
+		bottomRad = topRad;
+	}
+	
+	DrawRoundedRect(0, 0, WIN_WIDTH, sep*2 + top_h + lstTotal*fmin(FIT, entries.size()), theme.extras_background_color, theme.border, 15, topRad, topRad, bottomRad, bottomRad);
+	DrawRoundedRect(sep, sep, WIN_WIDTH-sep*2, top_h, RAD_BIG, theme.main_background_color, theme.border, 15);
 	
 	int TextH = TextRenderer::get_text_height();
-	int texty = (top_h - TextH) / 2;
+	int texty = (top_h - TextH) / 2 + sep;
 	
 	int cursorWidth = TextRenderer::get_text_width(1) * 0.2;
 	int cursor_offset = TextRenderer::get_text_width(curs.head_char) - scroll_offset;
 	
 	if (curs.anchor_char != curs.head_char) {
 		int anch_off = TextRenderer::get_text_width(curs.anchor_char) - scroll_offset;
-		DrawRect(texty+fmin(cursor_offset, anch_off), texty, fabs(anch_off-cursor_offset), TextH, theme.hover_background_color);
+		DrawRect(texty+sep+fmin(cursor_offset, anch_off), texty, fabs(anch_off-cursor_offset), TextH, theme.hover_background_color);
 	}
 	
 	if (current_search.length() == 0) {
@@ -527,12 +614,12 @@ void render() {
 			greeting = "Good Evening, Boss";
 		}
 		
-		TextRenderer::draw_text(texty, texty, icu::UnicodeString::fromUTF8(greeting), theme.lesser_text_color);
+		TextRenderer::draw_text(texty+sep, texty, icu::UnicodeString::fromUTF8(greeting), theme.lesser_text_color);
 	}else{
-		TextRenderer::draw_text(texty, texty, current_search, theme.main_text_color);
+		TextRenderer::draw_text(texty+sep, texty, current_search, theme.main_text_color);
 	}
 	
-	DrawRect(texty+cursor_offset, texty, cursorWidth, TextH, theme.main_text_color);
+	DrawRect(texty+cursor_offset+sep, texty, cursorWidth, TextH, theme.main_text_color);
 	
 	int start = selected_id - (FIT/2);
 	if (start < 0) {
@@ -553,9 +640,9 @@ void render() {
 		}
 		
 		auto e = entries[i];
-		int y = top_h+sep + lstTotal*(i-start);
-		DrawRoundedRect(0, y, WIN_WIDTH, indiv, RAD_SMALL, back, theme.border, 5);
-		TextRenderer::draw_text(RAD_SMALL, y + offsety, e.name, txt);
+		int y = top_h+sep*2 + lstTotal*(i-start);
+		DrawRoundedRect(sep, y, WIN_WIDTH-sep*2, indiv, RAD_SMALL, back, theme.border, 5);
+		TextRenderer::draw_text(RAD_SMALL+sep, y + offsety, e.name, txt);
 	}
 }
 
