@@ -1027,6 +1027,7 @@ int main() {
 	
 	
 	// 1. Create window but keep it hidden initially
+	glfwWindowHint(GLFW_SAMPLES, 4);
 	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 	glfwWindowHint(GLFW_DECORATED, GLFW_FALSE); // No title bar/borders
 	glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);  // Always on top
@@ -1034,6 +1035,8 @@ int main() {
 	
 	window = glfwCreateWindow(WIN_WIDTH, WIN_HEIGHT, "Overlay", NULL, NULL);
 	glfwMakeContextCurrent(window);
+	
+	glEnable(GL_MULTISAMPLE);
 	
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();

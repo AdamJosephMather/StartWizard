@@ -219,8 +219,8 @@ bool TextRenderer::init_font(const char* fontPath) {
 	if (fontTex == 0) glGenTextures(1, &fontTex);
 	glBindTexture(GL_TEXTURE_2D, fontTex);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TEX_W, TEX_H, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 	// --------------------------------------------------------------------------
 	// Debug: write atlas PPM (hella slow)
