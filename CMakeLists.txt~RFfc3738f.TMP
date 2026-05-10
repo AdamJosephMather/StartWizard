@@ -1,0 +1,150 @@
+cmake_minimum_required(VERSION 3.10)
+project(StartWizard)
+
+# debug...
+
+# if (MSVC)
+# 	message(STATUS "Building with MSVC AddressSanitizer enabled")
+# 
+# 	# Let CMake pick the correct /MDd or /MD (recommended for ASan on MSVC)
+# 	set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>")
+# 
+# 	add_compile_options(
+# 		/fsanitize=address
+# 		/Zi
+# 	)
+# 
+# 	add_link_options(
+# 		/fsanitize=address
+# 		/INCREMENTAL:NO
+# 		/DEBUG:FULL
+# 		# REMOVE this line:
+# 		# /WHOLEARCHIVE:clang_rt.asan-x86_64.lib
+# 	)
+# endif()
+
+
+
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if (MSVC)
+	add_compile_options(/wd4244 /wd4305 /wd4267)
+endif()
+
+include(FetchContent)
+
+add_definitions(-DNOMINMAX)
+# Windows needs these for ConPTY APIs
+add_definitions(-D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000008 -DUNICODE -D_UNICODE)
+
+
+add_executable(${PROJECT_NAME} main.cpp ${APP_ICON_RESOURCE_WINDOWS} text_renderer.cpp application.cpp widget.cpp button.cpp titlebar.cpp panel_holder.cpp widgetchooser.cpp editor.cpp filetree.cpp tabs.cpp settings.cpp codeedit.cpp linenumbers.cpp textedit.cpp highlighter.cpp tinyfiledialogs.c brokenstatemenu.cpp checkbox.cpp settingsmanager.cpp languageserverclient.cpp listbox.cpp imageview.cpp compare.cpp curler.cpp toast.cpp chat.cpp label.cpp myrect.cpp lspdebug.cpp terminal.cpp terminalwidget.cpp terminalwidgettabbed.cpp helpmenu.cpp scrollbar.cpp updatechecker.cpp contextmenu.cpp scrollnotify.cpp mathwindow.cpp asteroids.cpp md4c.c )
+# modelxrunner.cpp 
+
+
+# set(Torch_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libtorch/share/cmake/Torch" CACHE PATH "" FORCE)
+
+
+# Use vcpkg-provided GLFW and ICU
+find_package(glfw3 CONFIG REQUIRED)
+find_package(ICU   REQUIRED COMPONENTS uc i18n data)  # must list each component :contentReference[oaicite:0]{index=0}
+find_package(Freetype REQUIRED)
+find_package(CURL CONFIG REQUIRED)
+# find_package(Torch REQUIRED)
+find_package(oniguruma CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
+
+target_link_libraries(${PROJECT_NAME}
+	PRIVATE
+	glfw
+	opengl32
+	ICU::uc            # core Unicode (formerly icuuc) :contentReference[oaicite:1]{index=1}
+	ICU::i18n          # internationalization (formerly icui18n)
+	ICU::data          # ICU data blobs (formerly icudata)
+	Freetype::Freetype
+	CURL::libcurl
+	libvterm
+	oniguruma::onig
+	sioclient
+	OpenSSL::Crypto
+)
+
+target_link_libraries(${PROJECT_NAME}
+	PRIVATE
+	
+	# ${TORCH_LIBRARIES}
+	# tokenizers_cpp
+	
+	ole32
+	shell32
+	strsafe
+	dwmapi
+)
+
+if (MSVC)
+	target_compile_options(${PROJECT_NAME} PRIVATE /bigobj)
+endif()
+
+configure_file(${CMAKE_SOURCE_DIR}/app.png
+			   ${CMAKE_BINARY_DIR}/app.png
+			   COPYONLY)
+
+configure_file(${CMAKE_SOURCE_DIR}/fileIcon.png
+			   ${CMAKE_BINARY_DIR}/fileIcon.png
+			   COPYONLY)
+
+configure_file(${CMAKE_SOURCE_DIR}/folderIcon.png
+			   ${CMAKE_BINARY_DIR}/folderIcon.png
+			   COPYONLY)
+
+# if (WIN32)
+# 	# Copy libtorch runtime DLLs next to the executable
+# 	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+# 		COMMAND ${CMAKE_COMMAND} -E copy_directory
+# 						"${CMAKE_CURRENT_SOURCE_DIR}/libtorch/lib"
+# 						"$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+# 		COMMENT "Copying libtorch DLLs to output folder"
+# 		VERBATIM
+# 	)
+# endif()
+
+if(MSVC AND WIN32)
+	set(VC_REDIST_EXE "${CMAKE_SOURCE_DIR}/build_needs/vc_redist.x64.exe")
+
+	if(NOT EXISTS "${VC_REDIST_EXE}")
+		message(FATAL_ERROR "vc_redist not found at: ${VC_REDIST_EXE}")
+	endif()
+
+	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+						"${VC_REDIST_EXE}"
+						"$<TARGET_FILE_DIR:${PROJECT_NAME}>/vc_redist.x64.exe"
+		COMMENT "Copying VC++ Redistributable to output folder"
+		VERBATIM
+	)
+endif()
+
+# message(STATUS "Torch_DIR=${Torch_DIR}")
+# message(STATUS "TORCH_LIBRARIES=${TORCH_LIBRARIES}")
+
+
+# if(MSVC AND WIN32)
+# 	target_link_libraries(${PROJECT_NAME} PRIVATE delayimp)
+# 	target_link_options(${PROJECT_NAME} PRIVATE
+# 		"/DELAYLOAD:torch_cpu.dll"
+# 	)
+# endif()
+
+
+
+
+
+
+
+if (MSVC)
+	set_target_properties(${PROJECT_NAME} PROPERTIES
+		WIN32_EXECUTABLE TRUE
+	)
+endif()

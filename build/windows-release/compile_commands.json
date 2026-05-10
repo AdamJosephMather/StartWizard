@@ -1,0 +1,14 @@
+[
+{
+  "directory": "D:/Users/adamj/Documents/C/StartWizard/build/windows-release",
+  "command": "C:\\PROGRA~1\\MICROS~4\\2022\\COMMUN~1\\VC\\Tools\\MSVC\\1434~1.319\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DGLFW_DLL -DNOMINMAX -DNTDDI_VERSION=0x0A000008 -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 -external:ID:\\Users\\adamj\\Documents\\C\\vcpkg\\installed\\x64-windows\\include -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 /wd4244 /wd4305 /wd4267 /bigobj /FoCMakeFiles\\StartWizard.dir\\startwizard.cpp.obj /FdCMakeFiles\\StartWizard.dir\\ /FS -c D:\\Users\\adamj\\Documents\\C\\StartWizard\\startwizard.cpp",
+  "file": "D:\\Users\\adamj\\Documents\\C\\StartWizard\\startwizard.cpp",
+  "output": "CMakeFiles\\StartWizard.dir\\startwizard.cpp.obj"
+},
+{
+  "directory": "D:/Users/adamj/Documents/C/StartWizard/build/windows-release",
+  "command": "C:\\PROGRA~1\\MICROS~4\\2022\\COMMUN~1\\VC\\Tools\\MSVC\\1434~1.319\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DGLFW_DLL -DNOMINMAX -DNTDDI_VERSION=0x0A000008 -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 -external:ID:\\Users\\adamj\\Documents\\C\\vcpkg\\installed\\x64-windows\\include -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 /wd4244 /wd4305 /wd4267 /bigobj /FoCMakeFiles\\StartWizard.dir\\text_renderer.cpp.obj /FdCMakeFiles\\StartWizard.dir\\ /FS -c D:\\Users\\adamj\\Documents\\C\\StartWizard\\text_renderer.cpp",
+  "file": "D:\\Users\\adamj\\Documents\\C\\StartWizard\\text_renderer.cpp",
+  "output": "CMakeFiles\\StartWizard.dir\\text_renderer.cpp.obj"
+}
+]

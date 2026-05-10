@@ -1,0 +1,3 @@
+D:/Users/adamj/Documents/C/StartWizard/build/windows-release/CMakeFiles/StartWizard.dir
+D:/Users/adamj/Documents/C/StartWizard/build/windows-release/CMakeFiles/edit_cache.dir
+D:/Users/adamj/Documents/C/StartWizard/build/windows-release/CMakeFiles/rebuild_cache.dir
