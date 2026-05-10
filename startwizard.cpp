@@ -658,10 +658,12 @@ void render() {
 	DrawRect(texty+cursor_offset+sep, texty, cursorWidth, TextH, theme.main_text_color);
 	
 	int start = selected_id - (FIT/2);
+	if (start+FIT > entries.size()) {
+		start = entries.size()-FIT;
+	}
+	
 	if (start < 0) {
 		start = 0;
-	}else if (start+FIT > entries.size()) {
-		start = fmax(0, entries.size()-FIT);
 	}
 	
 	//0.  @
@@ -674,6 +676,8 @@ void render() {
 	
 	int offsety = (indiv-TextRenderer::get_text_height())/2;
 	int indent = 4*sep;
+	
+	std::cout << "Start: " << start << " end: " << fmin(start + FIT, entries.size()) << "\n";
 	
 	for (int i = start; i < fmin(start + FIT, entries.size()); i++) {
 		Color* back = theme.main_background_color;
@@ -717,6 +721,8 @@ void render() {
 			
 		}
 	}
+	
+	std::cout << "Done\n";
 	
 	glDisable(GL_SCISSOR_TEST);
 }
