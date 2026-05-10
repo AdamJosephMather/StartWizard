@@ -666,18 +666,8 @@ void render() {
 		start = 0;
 	}
 	
-	//0.  @
-	//1.  @
-	//2.  @
-	//3.  @
-	//4. [@]
-	//5.  @ <--
-	//6.  @
-	
 	int offsety = (indiv-TextRenderer::get_text_height())/2;
 	int indent = 4*sep;
-	
-	std::cout << "Start: " << start << " end: " << fmin(start + FIT, entries.size()) << "\n";
 	
 	for (int i = start; i < fmin(start + FIT, entries.size()); i++) {
 		Color* back = theme.main_background_color;
@@ -710,9 +700,16 @@ void render() {
 			textX += iconSize + sep;
 		}
 		
+		if (!e.children.empty()) {
+			glScissor(sep, 0, WIN_WIDTH-4*sep-TextRenderer::get_text_width(7), WIN_HEIGHT);
+		}
+		
 		TextRenderer::draw_text(textX, y + offsety, e.name, txt);
 		
+		glScissor(sep, 0, WIN_WIDTH-2*sep, WIN_HEIGHT);
+		
 		if (!e.children.empty()) {
+			TextRenderer::draw_text(WIN_WIDTH-RAD_SMALL-sep-TextRenderer::get_text_width(7), y + offsety, icu::UnicodeString::fromUTF8("(tab)"), theme.lesser_text_color);
 			if (e.open) {
 				TextRenderer::draw_text(WIN_WIDTH-RAD_SMALL-sep-TextRenderer::get_text_width(1), y + offsety, icu::UnicodeString::fromUTF8("v"), txt);
 			}else{
@@ -721,8 +718,6 @@ void render() {
 			
 		}
 	}
-	
-	std::cout << "Done\n";
 	
 	glDisable(GL_SCISSOR_TEST);
 }
@@ -1147,6 +1142,11 @@ int main() {
 	
 	window = glfwCreateWindow(WIN_WIDTH, WIN_HEIGHT, "Overlay", NULL, NULL);
 	glfwMakeContextCurrent(window);
+	
+	if (glewInit() != GLEW_OK) {
+		std::cerr << "Failed to initialize GLEW!" << std::endl;
+		return -1;
+	}
 	
 	glEnable(GL_MULTISAMPLE);
 	

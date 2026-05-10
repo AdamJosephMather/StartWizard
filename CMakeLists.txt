@@ -44,12 +44,14 @@ add_executable(${PROJECT_NAME} startwizard.cpp text_renderer.cpp )
 
 # Use vcpkg-provided GLFW and ICU
 find_package(glfw3 CONFIG REQUIRED)
+find_package(glew CONFIG REQUIRED)
 find_package(ICU   REQUIRED COMPONENTS uc i18n data)  # must list each component :contentReference[oaicite:0]{index=0}
 find_package(Freetype REQUIRED)
 
 target_link_libraries(${PROJECT_NAME}
 	PRIVATE
 	glfw
+	GLEW::GLEW
 	opengl32
 	ICU::uc            # core Unicode (formerly icuuc) :contentReference[oaicite:1]{index=1}
 	ICU::i18n          # internationalization (formerly icui18n)

@@ -215,6 +215,9 @@ FETCHCONTENT_UPDATES_DISCONNECTED:BOOL=OFF
 //The directory containing a CMake configuration file for Freetype.
 Freetype_DIR:PATH=D:/Users/adamj/Documents/C/vcpkg/installed/x64-windows/share/freetype
 
+//The directory containing a CMake configuration file for GLEW.
+GLEW_DIR:PATH=D:/Users/adamj/Documents/C/vcpkg/installed/x64-windows/share/glew
+
 //ICU data library (debug)
 ICU_DATA_LIBRARY_DEBUG:FILEPATH=D:/Users/adamj/Documents/C/vcpkg/installed/x64-windows/debug/lib/icudtd.lib
 
