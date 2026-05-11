@@ -881,8 +881,8 @@ void render() {
 			list_item_positions[i-scroll_vert].x1 = sep;
 			list_item_positions[i-scroll_vert].x2 = sep+width;
 		}
-		list_item_positions[i-scroll_vert].y1 = y;
-		list_item_positions[i-scroll_vert].y2 = y+indiv;
+		list_item_positions[i-scroll_vert].y1 = y - sep/2;
+		list_item_positions[i-scroll_vert].y2 = y+indiv + sep/2;
 		
 		int textX;
 		if (e.hwnd != NULL) {
@@ -1337,6 +1337,9 @@ void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
 		auto lp = list_item_positions[i];
 		
 		if (lp.x1 <= mouseX && lp.x2 >= mouseX && lp.y1 <= mouseY && lp.y2 >= mouseY) {
+			if (i+scroll_vert >= entries.size()) {
+				break;
+			}
 			selected_id = i + scroll_vert;
 			break;
 		}
