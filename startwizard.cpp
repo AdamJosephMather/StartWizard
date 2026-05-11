@@ -804,8 +804,8 @@ void render() {
 	
 	int top_h = WIN_HEIGHT / 5 - sep*2;
 	
-	int remaining = WIN_HEIGHT - top_h - sep;
-	int lstTotal = (remaining/10);
+	int remaining = WIN_HEIGHT - top_h - sep*2;
+	int lstTotal = (remaining/FIT);
 	
 	int indiv = lstTotal - sep;
 	
@@ -815,7 +815,9 @@ void render() {
 		bottomRad = topRad;
 	}
 	
-	DrawRoundedRect(0, 0, WIN_WIDTH, sep*2 + top_h + lstTotal*fmin(FIT, entries.size()), theme.extras_background_color, theme.border, 15, topRad, topRad, bottomRad, bottomRad);
+	int HEIGHT = sep*2 + top_h + lstTotal*fmin(FIT, entries.size());
+	
+	DrawRoundedRect(0, 0, WIN_WIDTH, HEIGHT, theme.extras_background_color, theme.border, 15, topRad, topRad, bottomRad, bottomRad);
 	DrawRoundedRect(sep, sep, WIN_WIDTH-sep*2, top_h, RAD_BIG, theme.main_background_color, theme.border, 15);
 	
 	glEnable(GL_SCISSOR_TEST);
