@@ -38,10 +38,25 @@ std::set<UChar32> numeric = {0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x3
 std::set<UChar32> allowed_in_var_names = {0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x5F};
 std::set<UChar32> punctuationset = {U'!', U'#', U'$', U'%', U'&', U'(', U')', U'*', U'+', U',', U'-', U'.', U'/', U':', U';', U'<', U'=', U'>', U'?', U'@', U'[', U'\\', U']', U'^', U'`', U'{', U'|', U'}', U'~'};
 
+int FIT = 10;
+
+struct ListItem {
+	int x1;
+	int x2;
+	int y1;
+	int y2;
+};
+
+std::vector<ListItem> list_item_positions;
+
 HHOOK hhkLowLevelKybd = NULL;
 bool win_used_in_combo = false;
 bool win_down = false;
 GLFWwindow* window;
+
+int mouseX = 0;
+int mouseY = 0;
+bool clicked = false;
 
 int WIN_WIDTH = 100;
 int WIN_HEIGHT = 100;
@@ -792,7 +807,6 @@ void render() {
 	int remaining = WIN_HEIGHT - top_h - sep;
 	int lstTotal = (remaining/10);
 	
-	int FIT = 10;
 	int indiv = lstTotal - sep;
 	
 	int bottomRad = RAD_SMALL+sep;
@@ -840,19 +854,6 @@ void render() {
 	
 	DrawRect(texty+cursor_offset+sep, texty, cursorWidth, TextH, theme.main_text_color);
 	
-	if (selected_id - scroll_vert < 3) {
-		scroll_vert = selected_id-2;
-	}
-	if (selected_id - scroll_vert > FIT-3) {
-		scroll_vert = selected_id-FIT+3;
-	}
-	if (scroll_vert+FIT > entries.size()) {
-		scroll_vert = entries.size()-FIT;
-	}
-	if (scroll_vert < 0) {
-		scroll_vert = 0;
-	}
-	
 	int offsety = (indiv-TextRenderer::get_text_height())/2;
 	int indent = 4*sep;
 	
@@ -869,10 +870,19 @@ void render() {
 		int y = top_h+sep*2 + lstTotal*(i-scroll_vert);
 		
 		if (e.hwnd != NULL) {
-			DrawRoundedRect(sep+indent, y, WIN_WIDTH-indent-sep*2, indiv, RAD_SMALL, back, theme.border, 5);
+			int x1 = sep+indent;
+			int width = WIN_WIDTH-indent-sep*2;
+			DrawRoundedRect(x1, y, width, indiv, RAD_SMALL, back, theme.border, 5);
+			list_item_positions[i-scroll_vert].x1 = x1;
+			list_item_positions[i-scroll_vert].x2 = x1+width;
 		}else{
-			DrawRoundedRect(sep, y, WIN_WIDTH-sep*2, indiv, RAD_SMALL, back, theme.border, 5);
+			int width = WIN_WIDTH-sep*2;
+			DrawRoundedRect(sep, y, width, indiv, RAD_SMALL, back, theme.border, 5);
+			list_item_positions[i-scroll_vert].x1 = sep;
+			list_item_positions[i-scroll_vert].x2 = sep+width;
 		}
+		list_item_positions[i-scroll_vert].y1 = y;
+		list_item_positions[i-scroll_vert].y2 = y+indiv;
 		
 		int textX;
 		if (e.hwnd != NULL) {
@@ -1110,6 +1120,21 @@ int calcWordJump(int dir, int location) {
 	return fabs(location - curs.head_char);
 }
 
+void rectifyScroll() {
+	if (selected_id - scroll_vert < 3) {
+		scroll_vert = selected_id-2;
+	}
+	if (selected_id - scroll_vert > FIT-3) {
+		scroll_vert = selected_id-FIT+3;
+	}
+	if (scroll_vert+FIT > entries.size()) {
+		scroll_vert = entries.size()-FIT;
+	}
+	if (scroll_vert < 0) {
+		scroll_vert = 0;
+	}
+}
+
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_ESCAPE) {
 		hide();
@@ -1234,6 +1259,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 		if (selected_id >= entries.size()) {
 			selected_id = entries.size()-1;
 		}
+		rectifyScroll();
 	}else if (key == GLFW_KEY_UP) {
 		if (entries.size() == 0) {
 			selected_id = 0;
@@ -1245,6 +1271,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 			selected_id = 0;
 			scroll_vert = 0;
 		}
+		rectifyScroll();
 	}else if (key == GLFW_KEY_TAB) {
 		if (selected_id < entries.size()) {
 			Entry e = entries[selected_id];
@@ -1284,7 +1311,58 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 	}
 }
 
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+	// action - GLFW_PRESS/GLFW_RELEASE/GLFW_REPEAT
+	// button - GLFW_MOUSE_BUTTON(LEFT/RIGHT)
+	if (!glfwGetWindowAttrib(window, GLFW_VISIBLE)) {return;}
+	
+	if (action == GLFW_PRESS) {
+		if (selected_id < entries.size()) {
+			std::cout << "Runnnnig: " << entries[selected_id].name_str << "\n";
+			
+			if (launch_app(entries[selected_id])) {
+				hide();
+			}
+		}
+	}
+}
+
+void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
+	mouseX = xpos;
+	mouseY = ypos;
+	
+	if (!glfwGetWindowAttrib(window, GLFW_VISIBLE)) {return;}
+	
+	for (int i = 0; i < FIT; i++) {
+		auto lp = list_item_positions[i];
+		
+		if (lp.x1 <= mouseX && lp.x2 >= mouseX && lp.y1 <= mouseY && lp.y2 >= mouseY) {
+			selected_id = i + scroll_vert;
+			break;
+		}
+	}
+}
+
+void scroll_callback(GLFWwindow* window, double xpos, double ypos) {
+	if (!glfwGetWindowAttrib(window, GLFW_VISIBLE)) {return;}
+	
+	if (mouseX >= list_item_positions[0].x1 && mouseX <= list_item_positions[0].x2 && mouseY >= list_item_positions[0].y1 && mouseY <= list_item_positions[FIT-1].y2) {
+		scroll_vert -= (int)ypos;
+		if (scroll_vert > (int)entries.size()-FIT) {
+			scroll_vert = (int)entries.size()-FIT;
+		}
+		if (scroll_vert < 0) {
+			scroll_vert = 0;
+		}
+		cursor_position_callback(window, mouseX, mouseY);
+	}
+}
+
 int main() {
+	for (int i = 0; i < FIT; i++) {
+		list_item_positions.push_back({});
+	}
+	
 	if (!glfwInit()) return -1;
 	
 	windir = getWinDir();
@@ -1370,7 +1448,9 @@ int main() {
 	
 	glfwSetCharCallback(window, character_callback);
 	glfwSetKeyCallback(window, key_callback);
-	
+	glfwSetCursorPosCallback(window, cursor_position_callback);
+	glfwSetMouseButtonCallback(window, mouse_button_callback);
+	glfwSetScrollCallback(window, scroll_callback);
 	
 	
 	FONT_SIZE = 30;
