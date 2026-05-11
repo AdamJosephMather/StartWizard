@@ -120,6 +120,7 @@ struct WindowInfo {
 std::vector<Entry> entries;
 int selected_id = 0;
 int scroll_vert = 0;
+double scroll_amnt = 0;
 
 std::vector<App> apps;
 std::wstring windir;
@@ -1352,7 +1353,14 @@ void scroll_callback(GLFWwindow* window, double xpos, double ypos) {
 	if (!glfwGetWindowAttrib(window, GLFW_VISIBLE)) {return;}
 	
 	if (mouseX >= list_item_positions[0].x1 && mouseX <= list_item_positions[0].x2 && mouseY >= list_item_positions[0].y1 && mouseY <= list_item_positions[FIT-1].y2) {
-		scroll_vert -= (int)ypos;
+		scroll_amnt -= ypos*1.5;
+		
+		if ((int)scroll_amnt == 0) {
+			return;
+		}
+		scroll_vert += (int)scroll_amnt;
+		scroll_amnt -= (int)scroll_amnt;
+		
 		if (scroll_vert > (int)entries.size()-FIT) {
 			scroll_vert = (int)entries.size()-FIT;
 		}
