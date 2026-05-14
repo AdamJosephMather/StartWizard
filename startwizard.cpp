@@ -55,6 +55,22 @@ struct ListItem {
 	int y2;
 };
 
+std::unordered_map<std::wstring, std::array<int, 3>> colorMap = {
+	{L"gray",         {255, 255, 255}}, // White per restriction
+	{L"light_blue",   {120, 200, 255}}, // Less gray, more sky-blue saturation
+	{L"blue",         {60, 100, 255}},  // Softened blue (not pure 0,0,255)
+	{L"light_orange", {255, 145, 70}}, // Creamier, less "neon" yellow
+	{L"orange",       {255, 105, 50}},   // Deeper orange, further from yellow
+	{L"light_green",  {144, 255, 144}}, 
+	{L"green",        {80, 220, 80}},   // Natural "forest" green vs neon
+	{L"light_pink",   {255, 182, 193}}, 
+	{L"pink",         {255, 100, 180}}, // Classic pink vs harsh magenta
+	{L"light_purple", {200, 160, 255}}, 
+	{L"purple",       {160, 80, 255}},  // Balanced violet vs harsh electric purple
+	{L"light_teal",   {150, 255, 255}}, 
+	{L"teal",         {0, 255, 255}}
+};
+
 std::vector<ListItem> list_item_positions;
 
 std::string EXE_FOLDER_PATH;
@@ -273,12 +289,25 @@ bool launch_via_aumid(const std::wstring& aumid) {
 	return true;
 }
 
+void setTint(std::wstring wstr) {
+	auto clr = colorMap[wstr];
+	SaveSetting(L"theme", wstr);
+	theme.tint_color->r = (float)(clr[0])/255.0;
+	theme.tint_color->g = (float)(clr[1])/255.0;
+	theme.tint_color->b = (float)(clr[2])/255.0;
+	updateFromTintColor(&theme, darkmode == L"true");
+}
+
 bool launch_app(const Entry& entry) {
 	if (!entry.special.empty()) {
 		if (entry.special == "set_darkmode: true") {
 			setDarkmode(true);
 		}else if (entry.special == "set_darkmode: false") {
 			setDarkmode(false);
+		}else if (entry.special.substr(0, 11) == "set_theme: ") {
+			std::string color = entry.special.substr(11);
+			std::wstring wstr(color.begin(), color.end());
+			setTint(wstr);
 		}else{
 			SetClipboardText(entry.special);
 			current_search = icu::UnicodeString::fromUTF8(entry.special);
@@ -292,7 +321,6 @@ bool launch_app(const Entry& entry) {
 			ShowWindow(entry.hwnd, SW_RESTORE);
 		}
 		SetForegroundWindow(entry.hwnd);
-//		SetFocus(entry.hwnd);
 		return true;
 	}
 
@@ -303,18 +331,6 @@ bool launch_app(const Entry& entry) {
 			std::cout << "Successfully launched detached\n";
 			return true;
 		}
-		
-//		SHELLEXECUTEINFOW sei{};
-//		sei.cbSize = sizeof(sei);
-//		sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-//		sei.lpVerb = L"open";
-//		sei.lpFile = entry.exe.c_str();
-//		sei.nShow = SW_SHOWNORMAL;
-//		if (ShellExecuteExW(&sei)) {
-//			if (sei.hProcess) CloseHandle(sei.hProcess);
-//			std::cout << "Successfully launched\n";
-//			return true;
-//		}
 		std::cout << "Exe launch failed, trying AUMID\n";
 	}
 
@@ -713,7 +729,7 @@ void recalculate() {
 	}
 	
 	if (!find.empty() && find[0] == ':'){
-		std::vector<std::pair<std::string, std::string>> prs = {{":Set Dark Mode", "set_darkmode: true"}, {":Set Light Mode", "set_darkmode: false"}};
+		std::vector<std::pair<std::string, std::string>> prs = {{":Set Dark Mode", "set_darkmode: true"}, {":Set Light Mode", "set_darkmode: false"}, {":Set Theme Gray", "set_theme: gray"}, {":Set Theme Light Blue", "set_theme: light_blue"}, {":Set Theme Blue", "set_theme: blue"}, {":Set Theme Light Orange", "set_theme: light_orange"}, {":Set Theme Orange", "set_theme: orange"}, {":Set Theme Light Green", "set_theme: light_green"}, {":Set Theme Green", "set_theme: green"}, {":Set Theme Light Pink", "set_theme: light_pink"}, {":Set Theme Pink", "set_theme: pink"}, {":Set Theme Light Purple", "set_theme: light_purple"}, {":Set Theme Purple", "set_theme: purple"}, {":Set Theme Light Teal", "set_theme: light_teal"}, {":Set Theme Teal", "set_theme: teal"}};
 		
 		for (std::pair<std::string, std::string> pr : prs) {
 			if (fuzzySearch(pr.first, find)) {
@@ -1599,7 +1615,7 @@ int main() {
 	current_search = icu::UnicodeString();
 	
 	theme.tint_color = MakeColor(0.705882353,0.784313725,1);
-	updateFromTintColor(&theme, darkmode == L"true");
+	setTint(LoadSetting(L"theme", L"gray"));
 	
 	hhkLowLevelKybd = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
 
