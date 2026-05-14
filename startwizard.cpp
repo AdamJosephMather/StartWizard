@@ -60,6 +60,7 @@ bool clicked = false;
 
 int WIN_WIDTH = 100;
 int WIN_HEIGHT = 100;
+int TRUE_HEIGHT = 0;
 int WIN_X = 0;
 int WIN_Y = 0;
 int RAD_BIG = 1;
@@ -858,6 +859,8 @@ void render() {
 	DrawRoundedRect(0, 0, WIN_WIDTH, HEIGHT, theme.extras_background_color, theme.border, 15, topRad, topRad, bottomRad, bottomRad);
 	DrawRoundedRect(sep, sep, WIN_WIDTH-sep*2, top_h, RAD_BIG, theme.main_background_color, theme.border, 15);
 	
+	TRUE_HEIGHT = HEIGHT;
+	
 	glEnable(GL_SCISSOR_TEST);
 	glScissor(sep, 0, WIN_WIDTH-2*sep, WIN_HEIGHT);
 	
@@ -1408,6 +1411,38 @@ void scroll_callback(GLFWwindow* window, double xpos, double ypos) {
 	}
 }
 
+void updateMousePassthrough(GLFWwindow* window) {
+	HWND hwnd = glfwGetWin32Window(window);
+
+	POINT pt;
+	GetCursorPos(&pt);
+
+	RECT rect;
+	GetWindowRect(hwnd, &rect);
+
+	bool cursorInsideWindow =
+		pt.x >= rect.left &&
+		pt.x < rect.right &&
+		pt.y >= rect.top &&
+		pt.y < rect.bottom;
+
+	if (!cursorInsideWindow) {
+		glfwSetWindowAttrib(window, GLFW_MOUSE_PASSTHROUGH, GLFW_FALSE);
+		return;
+	}
+
+	POINT clientPt = pt;
+	ScreenToClient(hwnd, &clientPt);
+
+	bool overUI = clientPt.y <= TRUE_HEIGHT;
+
+	glfwSetWindowAttrib(
+		window,
+		GLFW_MOUSE_PASSTHROUGH,
+		overUI ? GLFW_FALSE : GLFW_TRUE
+	);
+}
+
 int main() {
 	for (int i = 0; i < FIT; i++) {
 		list_item_positions.push_back({});
@@ -1528,6 +1563,10 @@ int main() {
 		}
 		
 		recalculating = false;
+		
+		if (glfwGetWindowAttrib(window, GLFW_VISIBLE)) {
+			updateMousePassthrough(window);
+		}
 		
 		glfwPollEvents();
 		
