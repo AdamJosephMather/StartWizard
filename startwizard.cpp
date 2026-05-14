@@ -1206,6 +1206,19 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 			recalculating = true;
 		}
 		return;
+	}else if (key == GLFW_KEY_DELETE) {
+		if (curs.anchor_char != curs.head_char) {
+			removeSelected();
+		}else if (curs.head_char != current_search.length()) {
+			int dist = 1;
+			if (is_control_held) {
+				dist = calcWordJump(1, curs.head_char);
+			}
+			
+			current_search.remove(curs.head_char, dist);
+			recalculating = true;
+		}
+		return;
 	}else if (key == GLFW_KEY_LEFT) {
 		if (is_shift_held) {
 			if (curs.head_char != 0) {
