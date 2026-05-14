@@ -74,6 +74,7 @@ std::unordered_map<std::wstring, std::array<int, 3>> colorMap = {
 std::vector<ListItem> list_item_positions;
 
 std::string EXE_FOLDER_PATH;
+std::wstring CURRENT_EXE_PATH;
 NOTIFYICONDATAA nid = { 0 };
 #define WM_TRAYICON (WM_USER + 1)
 #define WM_MY_TRIGGER (WM_USER + 2)
@@ -525,6 +526,11 @@ void GetAllApps() {
 				psl->Release();
 			}
 
+			if (a.exe == CURRENT_EXE_PATH) {
+				seenNames.insert(name_str);
+				continue;
+			}
+
 			IShellItem* pItem = nullptr;
 			if (SUCCEEDED(SHCreateItemFromParsingName(a.exe.c_str(), NULL, IID_PPV_ARGS(&pItem)))) {
 				IShellItemImageFactory* pImageFactory = nullptr;
@@ -588,6 +594,12 @@ void GetAllApps() {
 				}
 				if (a.exe.empty()) {
 					a.exe = ResolveAUMIDPath(a.aumid);
+				}
+
+				if (a.exe == CURRENT_EXE_PATH) {
+					seenNames.insert(a.name_str);
+					pItem->Release();
+					continue;
 				}
 
 				IShellItemImageFactory* pImageFactory = nullptr;
@@ -729,6 +741,8 @@ void recalculate() {
 	}
 	
 	if (!find.empty() && find[0] == ':'){
+		find = find.substr(1);
+		
 		std::vector<std::pair<std::string, std::string>> prs = {{":Set Dark Mode", "set_darkmode: true"}, {":Set Light Mode", "set_darkmode: false"}, {":Set Theme Gray", "set_theme: gray"}, {":Set Theme Light Blue", "set_theme: light_blue"}, {":Set Theme Blue", "set_theme: blue"}, {":Set Theme Light Orange", "set_theme: light_orange"}, {":Set Theme Orange", "set_theme: orange"}, {":Set Theme Light Green", "set_theme: light_green"}, {":Set Theme Green", "set_theme: green"}, {":Set Theme Light Pink", "set_theme: light_pink"}, {":Set Theme Pink", "set_theme: pink"}, {":Set Theme Light Purple", "set_theme: light_purple"}, {":Set Theme Purple", "set_theme: purple"}, {":Set Theme Light Teal", "set_theme: light_teal"}, {":Set Theme Teal", "set_theme: teal"}};
 		
 		for (std::pair<std::string, std::string> pr : prs) {
@@ -1692,6 +1706,11 @@ int main() {
 	fs::path p = path;
 	p.remove_filename();
 	EXE_FOLDER_PATH = p.string();
+
+	WCHAR wpath[MAX_PATH];
+	GetModuleFileNameW(NULL, wpath, MAX_PATH);
+	CURRENT_EXE_PATH = normalizePath(wpath);
+
 	std::string fontpath = EXE_FOLDER_PATH+"CascadiaCode-Regular.ttf";
 	FONT_PATH = fontpath.c_str();
 	
