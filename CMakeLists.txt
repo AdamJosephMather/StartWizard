@@ -102,12 +102,12 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different
 					"${ICON_ICO}"
 					"$<TARGET_FILE_DIR:${PROJECT_NAME}>/icon.ico"
-	COMMENT "Copying Icon Ic to output folder"
+	COMMENT "Copying Icon Ico to output folder"
 	VERBATIM
 )
 
-# if (MSVC)
-# 	set_target_properties(${PROJECT_NAME} PROPERTIES
-# 		WIN32_EXECUTABLE TRUE
-# 	)
-# endif()
+if (MSVC)
+	set_target_properties(${PROJECT_NAME} PROPERTIES
+		WIN32_EXECUTABLE TRUE
+	)
+endif()

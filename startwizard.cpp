@@ -56,18 +56,18 @@ struct ListItem {
 };
 
 std::unordered_map<std::wstring, std::array<int, 3>> colorMap = {
-	{L"gray",         {255, 255, 255}}, // White per restriction
-	{L"light_blue",   {120, 200, 255}}, // Less gray, more sky-blue saturation
-	{L"blue",         {60, 100, 255}},  // Softened blue (not pure 0,0,255)
-	{L"light_orange", {255, 145, 70}}, // Creamier, less "neon" yellow
-	{L"orange",       {255, 105, 50}},   // Deeper orange, further from yellow
-	{L"light_green",  {144, 255, 144}}, 
-	{L"green",        {80, 220, 80}},   // Natural "forest" green vs neon
-	{L"light_pink",   {255, 182, 193}}, 
-	{L"pink",         {255, 100, 180}}, // Classic pink vs harsh magenta
-	{L"light_purple", {200, 160, 255}}, 
-	{L"purple",       {160, 80, 255}},  // Balanced violet vs harsh electric purple
-	{L"light_teal",   {150, 255, 255}}, 
+	{L"gray",         {255, 255, 255}},
+	{L"light_blue",   {120, 200, 255}},
+	{L"blue",         {60, 100, 255}},
+	{L"light_orange", {255, 145, 70}},
+	{L"orange",       {255, 105, 50}},
+	{L"light_green",  {144, 255, 144}},
+	{L"green",        {80, 220, 80}},
+	{L"light_pink",   {255, 182, 193}},
+	{L"pink",         {255, 100, 180}},
+	{L"light_purple", {200, 160, 255}},
+	{L"purple",       {160, 80, 255}},
+	{L"light_teal",   {150, 255, 255}},
 	{L"teal",         {0, 255, 255}}
 };
 
