@@ -27,9 +27,16 @@ namespace fs = std::filesystem;
 #include <algorithm>
 #include <cwctype>
 
+#include <shellapi.h>
+#include <commctrl.h>
+#include <strsafe.h>
+#include <uxtheme.h>
+
 #pragma comment(lib, "Shell32.lib")
 #pragma comment(lib, "Ole32.lib")
 #pragma comment(lib, "user32.lib")
+#pragma comment(lib, "Comctl32.lib")
+#pragma comment(lib, "uxtheme.lib")
 
 const float M_PI = 3.141592653589793238;
 
@@ -39,6 +46,7 @@ std::set<UChar32> allowed_in_var_names = {0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x
 std::set<UChar32> punctuationset = {U'!', U'#', U'$', U'%', U'&', U'(', U')', U'*', U'+', U',', U'-', U'.', U'/', U':', U';', U'<', U'=', U'>', U'?', U'@', U'[', U'\\', U']', U'^', U'`', U'{', U'|', U'}', U'~'};
 
 int FIT = 10;
+std::wstring darkmode = L"true";
 
 struct ListItem {
 	int x1;
@@ -48,6 +56,12 @@ struct ListItem {
 };
 
 std::vector<ListItem> list_item_positions;
+
+std::string EXE_FOLDER_PATH;
+NOTIFYICONDATAA nid = { 0 };
+#define WM_TRAYICON (WM_USER + 1)
+#define WM_MY_TRIGGER (WM_USER + 2)
+DWORD threadId;
 
 HHOOK hhkLowLevelKybd = NULL;
 bool win_used_in_combo = false;
@@ -79,8 +93,6 @@ struct Cursor {
 	int head_char = 0;
 };
 
-float target_scroll_offset = 0;
-float scroll_offset = 0; // both meassured in characters (width constant - monospace)
 Cursor curs;
 
 icu::UnicodeString current_search;
@@ -98,7 +110,8 @@ struct Entry {
 	std::wstring aumid;
 	HWND hwnd = NULL;
 	std::vector<SubEntry> children;
-	std::string copy = "";
+	std::string special = "";
+	int keeptop = 0;
 	int matchrank = 0;
 	bool open = false;
 };
@@ -124,25 +137,47 @@ int scroll_vert = 0;
 double scroll_amnt = 0;
 
 std::vector<App> apps;
-std::wstring windir;
 
-std::wstring getWinDir() {
-	// 1. Get the required buffer size
-	DWORD size = GetEnvironmentVariableW(L"windir", nullptr, 0);
-	if (size == 0) return L""; // Variable not found
-
-	// 2. Resize wstring to hold the path
-	std::wstring result;
-	result.resize(size);
-
-	// 3. Get the variable, passing direct buffer
-	// size-1 to avoid counting null terminator twice
-	GetEnvironmentVariableW(L"windir", &result[0], size);
+bool SaveSetting(const std::wstring& valueName, const std::wstring& data) {
+	HKEY hKey;
+	LPCWSTR subkey = L"Software\\StartWizard";
 	
-	// Resize to remove excess null terminator
-	result.resize(size - 1);
+	LONG result = RegCreateKeyEx(HKEY_CURRENT_USER, subkey, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL);
 	
-	return result;
+	if (result == ERROR_SUCCESS) {
+		result = RegSetValueEx(hKey, valueName.c_str(), 0, REG_SZ, (BYTE*)data.c_str(), (data.length() + 1) * sizeof(wchar_t));
+		RegCloseKey(hKey);
+	}
+
+	return (result == ERROR_SUCCESS);
+}
+
+std::wstring LoadSetting(const std::wstring& valueName, const std::wstring def) {
+	HKEY hKey;
+	LPCWSTR subkey = L"Software\\StartWizard";
+	WCHAR buffer[255];
+	DWORD bufferSize = sizeof(buffer);
+
+	LONG result = RegOpenKeyEx(HKEY_CURRENT_USER, subkey, 0, KEY_READ, &hKey);
+
+	if (result == ERROR_SUCCESS) {
+		result = RegQueryValueEx(hKey, valueName.c_str(), NULL, NULL, (LPBYTE)buffer, &bufferSize);
+		RegCloseKey(hKey);
+	}
+
+	return (result == ERROR_SUCCESS) ? std::wstring(buffer) : def;
+}
+
+void setDarkmode(bool drk) {
+	if (!drk) {
+		SaveSetting(L"darkmode", L"false");
+		darkmode = L"false";
+		updateFromTintColor(&theme, false);
+	}else{
+		SaveSetting(L"darkmode", L"true");
+		darkmode = L"true";
+		updateFromTintColor(&theme, true);
+	}
 }
 
 GLuint HBitmapToTexture(HBITMAP hBitmap) {
@@ -239,12 +274,18 @@ bool launch_via_aumid(const std::wstring& aumid) {
 }
 
 bool launch_app(const Entry& entry) {
-	if (!entry.copy.empty()) {
-		SetClipboardText(entry.copy);
-		current_search = icu::UnicodeString::fromUTF8(entry.copy);
-		recalculating = true;
-		curs.head_char = current_search.length();
-		curs.anchor_char = curs.head_char;
+	if (!entry.special.empty()) {
+		if (entry.special == "set_darkmode: true") {
+			setDarkmode(true);
+		}else if (entry.special == "set_darkmode: false") {
+			setDarkmode(false);
+		}else{
+			SetClipboardText(entry.special);
+			current_search = icu::UnicodeString::fromUTF8(entry.special);
+			recalculating = true;
+			curs.head_char = current_search.length();
+			curs.anchor_char = curs.head_char;
+		}
 		return false;
 	} else if (entry.hwnd != NULL) {
 		if (IsIconic(entry.hwnd)) {
@@ -582,7 +623,6 @@ bool fuzzySearch(std::string inraw, std::string find) {
 	return true;
 }
 
-
 bool equalsIgnoreCase(const std::wstring& wa, const std::wstring& wb) {
 	std::string a(wa.begin(), wa.end());
 	std::string b(wb.begin(), wb.end());
@@ -632,7 +672,8 @@ void recalculate() {
 	if (res.first){
 		Entry e;
 		e.name = doubleToUnicodeString_pretty(res.second);
-		e.name.toUTF8String(e.copy);
+		e.name.toUTF8String(e.special);
+		e.keeptop = 2;
 		entries.push_back(e);
 	}
 	
@@ -671,9 +712,24 @@ void recalculate() {
 		}
 	}
 	
+	if (!find.empty() && find[0] == ':'){
+		std::vector<std::pair<std::string, std::string>> prs = {{":Set Dark Mode", "set_darkmode: true"}, {":Set Light Mode", "set_darkmode: false"}};
+		
+		for (std::pair<std::string, std::string> pr : prs) {
+			if (fuzzySearch(pr.first, find)) {
+				Entry e;
+				e.name = icu::UnicodeString::fromUTF8(pr.first);
+				e.name_str = pr.first;
+				e.special = pr.second;
+				e.keeptop = 1;
+				entries.push_back(e);
+			}
+		}
+	}
+	
 	std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
-		if (a.copy.empty() != b.copy.empty()) {
-			return b.copy.empty();
+		if (a.keeptop != b.keeptop) {
+			return a.keeptop > b.keeptop;
 		}
 		if (a.children.size() != b.children.size()) {
 			return a.children.size() > b.children.size();
@@ -771,15 +827,11 @@ void DrawRoundBorder(int x, int y, int w, int h, Color* color, int segments,
 					  float rTL, float rTR, float rBR, float rBL) {
 	glColor4f(color->r, color->g, color->b, color->a);
 	
-	// Using M_PI for consistency. Standard orientation:
-	// 0: Right, 0.5: Bottom, 1.0: Left, 1.5: Top (in radians * PI)
-	
 	drawCornerEdge(x + w - rTR, y + rTR,     1.5f * M_PI, 2.0f * M_PI, segments, rTR, border_width); // TR
 	drawCornerEdge(x + w - rBR, y + h - rBR, 0.0f,        0.5f * M_PI, segments, rBR, border_width); // BR
 	drawCornerEdge(x + rBL,     y + h - rBL, 0.5f * M_PI, 1.0f * M_PI, segments, rBL, border_width); // BL
 	drawCornerEdge(x + rTL,     y + rTL,     1.0f * M_PI, 1.5f * M_PI, segments, rTL, border_width); // TL
 	
-	// Straight Edges
 	DrawRect(x + rTL, y, w - rTL - rTR, border_width, color);               // Top edge
 	DrawRect(x + rBL, y + h - border_width, w - rBL - rBR, border_width, color); // Bottom edge
 	DrawRect(x, y + rTL, border_width, h - rTL - rBL, color);               // Left edge
@@ -791,8 +843,6 @@ void DrawRoundedRect(float x, float y, float w, float h, Color* color, Color* bc
 	glColor4f(color->r, color->g, color->b, color->a);
 	
 	glBegin(GL_QUADS);
-		// Center Block (Vertical strip spanning the full height minus the largest corner offsets)
-		// This ensures the middle of the box is always filled.
 		float maxTop = (rTL > rTR) ? rTL : rTR;
 		float maxBottom = (rBL > rBR) ? rBL : rBR;
 
@@ -801,20 +851,17 @@ void DrawRoundedRect(float x, float y, float w, float h, Color* color, Color* bc
 		glVertex2f(x + w, y + h - maxBottom);
 		glVertex2f(x, y + h - maxBottom);
 
-		// Top Strip (Filling the gap between TL and TR corners)
 		glVertex2f(x + rTL, y);
 		glVertex2f(x + w - rTR, y);
 		glVertex2f(x + w - rTR, y + maxTop);
 		glVertex2f(x + rTL, y + maxTop);
 
-		// Bottom Strip (Filling the gap between BL and BR corners)
 		glVertex2f(x + rBL, y + h - maxBottom);
 		glVertex2f(x + w - rBR, y + h - maxBottom);
 		glVertex2f(x + w - rBR, y + h);
 		glVertex2f(x + rBL, y + h);
 	glEnd();
 
-	// Fill the 4 corners
 	drawCorner(x + w - rTR, y + rTR,     1.5f * M_PI, 2.0f * M_PI, segments, rTR); // TR
 	drawCorner(x + w - rBR, y + h - rBR, 0.0f,        0.5f * M_PI, segments, rBR); // BR
 	drawCorner(x + rBL,     y + h - rBL, 0.5f * M_PI, 1.0f * M_PI, segments, rBL); // BL
@@ -868,10 +915,10 @@ void render() {
 	int texty = (top_h - TextH) / 2 + sep;
 	
 	int cursorWidth = TextRenderer::get_text_width(1) * 0.2;
-	int cursor_offset = TextRenderer::get_text_width(curs.head_char) - scroll_offset;
+	int cursor_offset = TextRenderer::get_text_width(curs.head_char);
 	
 	if (curs.anchor_char != curs.head_char) {
-		int anch_off = TextRenderer::get_text_width(curs.anchor_char) - scroll_offset;
+		int anch_off = TextRenderer::get_text_width(curs.anchor_char);
 		DrawRect(texty+sep+fmin(cursor_offset, anch_off), texty, fabs(anch_off-cursor_offset), TextH, theme.hover_background_color);
 	}
 	
@@ -906,7 +953,7 @@ void render() {
 		
 		if (i == selected_id) {
 			back = theme.main_text_color;
-			txt = theme.black;
+			txt = theme.darker_background_color;
 		}
 		
 		auto e = entries[i];
@@ -1358,8 +1405,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 		}
 	}else if (key == GLFW_KEY_ENTER) {
 		if (selected_id < entries.size()) {
-			std::cout << "Runnnnig: " << entries[selected_id].name_str << "\n";
-			
 			if (launch_app(entries[selected_id])) {
 				hide();
 			}
@@ -1456,14 +1501,85 @@ void updateMousePassthrough(GLFWwindow* window) {
 	);
 }
 
+void CreateTrayIcon(HWND hWnd) {
+	nid.cbSize = sizeof(NOTIFYICONDATAA);
+	nid.hWnd = hWnd;
+	nid.uID = 1001; 
+	nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+	std::string iconPath = EXE_FOLDER_PATH+"icon.ico";
+	nid.hIcon = (HICON)LoadImageA(
+		NULL,
+		iconPath.c_str(),
+		IMAGE_ICON,
+		0, 0,
+		LR_LOADFROMFILE | LR_DEFAULTSIZE
+	);
+	nid.uFlags |= NIF_MESSAGE;
+	nid.uCallbackMessage = WM_TRAYICON;
+	
+	strcpy_s(nid.szTip, "StartWizard");
+	Shell_NotifyIconA(NIM_ADD, &nid);
+}
+
+void CloseTrayIcon(HWND hWnd) {
+	strcpy_s(nid.szTip, "StartWizard");
+	Shell_NotifyIconA(NIM_DELETE, &nid);
+}
+
+void ShowTrayMenu(HWND hWnd) {
+	SetWindowTheme(hWnd, L"DarkMode_Explorer", NULL);
+	
+	HMENU hMenu = CreatePopupMenu();
+	AppendMenuA(hMenu, MF_STRING, 1, "Stop StartWizard");
+	AppendMenuA(hMenu, MF_SEPARATOR, 0, NULL);
+	if (darkmode == L"true") {
+		AppendMenuA(hMenu, MF_STRING, 2, "Light Mode");
+	}else{
+		AppendMenuA(hMenu, MF_STRING, 2, "Dark Mode");
+	}
+	
+	POINT pt;
+	GetCursorPos(&pt);
+	SetForegroundWindow(hWnd);
+	
+	int selection = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hWnd, NULL);
+	
+	switch (selection) {
+		case 1:
+			glfwSetWindowShouldClose(window, GLFW_TRUE);
+			PostThreadMessage(threadId, WM_MY_TRIGGER, 0, 0);
+			break;
+		case 2:
+			setDarkmode(darkmode != L"true");
+			break;
+		default:
+			break;
+	}
+
+	DestroyMenu(hMenu);
+}
+
+LRESULT CALLBACK TraySubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+	if (uMsg == WM_TRAYICON) {
+		if (lParam == WM_RBUTTONUP) {
+			ShowTrayMenu(hWnd);
+		}
+		return 0;
+	}
+	
+	return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
+
 int main() {
+	threadId = GetCurrentThreadId();
+	
+	darkmode = LoadSetting(L"darkmode", L"true");
+	
 	for (int i = 0; i < FIT; i++) {
 		list_item_positions.push_back({});
 	}
 	
 	if (!glfwInit()) return -1;
-	
-	windir = getWinDir();
 	
 	theme.main_text_color = MakeColor(0, 0, 0);
 	theme.lesser_text_color = MakeColor(0, 0, 0);
@@ -1483,7 +1599,7 @@ int main() {
 	current_search = icu::UnicodeString();
 	
 	theme.tint_color = MakeColor(0.705882353,0.784313725,1);
-	updateFromTintColor(&theme, true);
+	updateFromTintColor(&theme, darkmode == L"true");
 	
 	hhkLowLevelKybd = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
 
@@ -1537,6 +1653,8 @@ int main() {
 	style &= ~WS_EX_APPWINDOW; // Ensures it's not a "main" app window
 	SetWindowLongPtr(hwnd, GWL_EXSTYLE, style);
 	
+	SetWindowSubclass(hwnd, TraySubclassProc, 1, 0);
+	
 	// 3. Handle Auto-Hide when focus is lost
 	glfwSetWindowFocusCallback(window, [](GLFWwindow* win, int focused) {
 		if (!focused) {
@@ -1557,10 +1675,19 @@ int main() {
 	std::cout << "Executable path: " << path << std::endl;
 	fs::path p = path;
 	p.remove_filename();
-	std::string fontpath = p.string()+"CascadiaCode-Regular.ttf";
+	EXE_FOLDER_PATH = p.string();
+	std::string fontpath = EXE_FOLDER_PATH+"CascadiaCode-Regular.ttf";
 	FONT_PATH = fontpath.c_str();
 	
 	setSizes();
+	
+	CreateTrayIcon(hwnd);
+	
+	
+//	BOOL Shell_NotifyIconA(
+//		[in] DWORD            dwMessage,
+//		[in] PNOTIFYICONDATAA lpData
+//	);
 	
 	
 	while (!glfwWindowShouldClose(window)) {
@@ -1569,10 +1696,14 @@ int main() {
 			while (GetMessage(&msg, NULL, 0, 0)) {
 				TranslateMessage(&msg);
 				DispatchMessage(&msg);
-				if (glfwGetWindowAttrib(window, GLFW_VISIBLE)) {
+				if (glfwGetWindowAttrib(window, GLFW_VISIBLE) || glfwWindowShouldClose(window)) {
 					break;
 				}
 			}
+		}
+		
+		if (glfwWindowShouldClose(window)) {
+			break;
 		}
 		
 		recalculating = false;
@@ -1606,8 +1737,11 @@ int main() {
 			glfwSwapBuffers(window);
 		}
 	}
-
+	
+	std::cout << "Closing\n";
+	
 	UnhookWindowsHookEx(hhkLowLevelKybd);
+	CloseTrayIcon(hwnd);
 	return 0;
 }
 
