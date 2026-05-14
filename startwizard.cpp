@@ -186,6 +186,38 @@ GLuint HBitmapToTexture(HBITMAP hBitmap) {
 	return textureID;
 }
 
+bool launch_exe_detached(const std::wstring& exe) {
+	STARTUPINFOW si{};
+	PROCESS_INFORMATION pi{};
+
+	si.cb = sizeof(si);
+
+	std::wstring cmd = L"\"" + exe + L"\"";
+
+	BOOL ok = CreateProcessW(
+		nullptr,
+		cmd.data(),
+		nullptr,
+		nullptr,
+		FALSE,
+		DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+		nullptr,
+		nullptr,
+		&si,
+		&pi
+	);
+
+	if (!ok) {
+		std::wcout << L"CreateProcessW failed: " << GetLastError() << L"\n";
+		return false;
+	}
+
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+
+	return true;
+}
+
 bool launch_via_aumid(const std::wstring& aumid) {
 	IApplicationActivationManager* paam = nullptr;
 	HRESULT hr = CoCreateInstance(CLSID_ApplicationActivationManager, nullptr,
@@ -218,24 +250,29 @@ bool launch_app(const Entry& entry) {
 			ShowWindow(entry.hwnd, SW_RESTORE);
 		}
 		SetForegroundWindow(entry.hwnd);
-		SetFocus(entry.hwnd);
+//		SetFocus(entry.hwnd);
 		return true;
 	}
 
 	std::cout << "Launching: " << std::string(entry.exe.begin(), entry.exe.end()) << "\n";
 
 	if (!entry.exe.empty()) {
-		SHELLEXECUTEINFOW sei{};
-		sei.cbSize = sizeof(sei);
-		sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-		sei.lpVerb = L"open";
-		sei.lpFile = entry.exe.c_str();
-		sei.nShow = SW_SHOWNORMAL;
-		if (ShellExecuteExW(&sei)) {
-			if (sei.hProcess) CloseHandle(sei.hProcess);
-			std::cout << "Successfully launched\n";
+		if (launch_exe_detached(entry.exe)) {
+			std::cout << "Successfully launched detached\n";
 			return true;
 		}
+		
+//		SHELLEXECUTEINFOW sei{};
+//		sei.cbSize = sizeof(sei);
+//		sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+//		sei.lpVerb = L"open";
+//		sei.lpFile = entry.exe.c_str();
+//		sei.nShow = SW_SHOWNORMAL;
+//		if (ShellExecuteExW(&sei)) {
+//			if (sei.hProcess) CloseHandle(sei.hProcess);
+//			std::cout << "Successfully launched\n";
+//			return true;
+//		}
 		std::cout << "Exe launch failed, trying AUMID\n";
 	}
 
