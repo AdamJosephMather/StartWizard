@@ -240,34 +240,17 @@ GLuint HBitmapToTexture(HBITMAP hBitmap) {
 }
 
 bool launch_exe_detached(const std::wstring& exe) {
-	STARTUPINFOW si{};
-	PROCESS_INFORMATION pi{};
+	SHELLEXECUTEINFOW sei{};
+	sei.cbSize = sizeof(sei);
+	sei.fMask  = SEE_MASK_NOASYNC;
+	sei.lpVerb = L"open";
+	sei.lpFile = exe.c_str();
+	sei.nShow  = SW_SHOWNORMAL;
 
-	si.cb = sizeof(si);
-
-	std::wstring cmd = L"\"" + exe + L"\"";
-
-	BOOL ok = CreateProcessW(
-		nullptr,
-		cmd.data(),
-		nullptr,
-		nullptr,
-		FALSE,
-		DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-		nullptr,
-		nullptr,
-		&si,
-		&pi
-	);
-
-	if (!ok) {
-		std::wcout << L"CreateProcessW failed: " << GetLastError() << L"\n";
+	if (!ShellExecuteExW(&sei)) {
+		std::wcout << L"ShellExecuteEx failed: " << GetLastError() << L"\n";
 		return false;
 	}
-
-	CloseHandle(pi.hThread);
-	CloseHandle(pi.hProcess);
-
 	return true;
 }
 
@@ -300,7 +283,11 @@ void setTint(std::wstring wstr) {
 }
 
 bool launch_app(const Entry& entry) {
+	std::cout << "Launch\n";
+	
 	if (!entry.special.empty()) {
+		std::cout << "Special\n";
+		
 		if (entry.special == "set_darkmode: true") {
 			setDarkmode(true);
 		}else if (entry.special == "set_darkmode: false") {
@@ -318,6 +305,8 @@ bool launch_app(const Entry& entry) {
 		}
 		return false;
 	} else if (entry.hwnd != NULL) {
+		std::cout << "Moving up\n";
+		
 		if (IsIconic(entry.hwnd)) {
 			ShowWindow(entry.hwnd, SW_RESTORE);
 		}
@@ -328,6 +317,8 @@ bool launch_app(const Entry& entry) {
 	std::cout << "Launching: " << std::string(entry.exe.begin(), entry.exe.end()) << "\n";
 
 	if (!entry.exe.empty()) {
+		std::cout << "Launch exe " << std::string(entry.exe.begin(), entry.exe.end()) << "\n";
+		
 		if (launch_exe_detached(entry.exe)) {
 			std::cout << "Successfully launched detached\n";
 			return true;
@@ -336,6 +327,7 @@ bool launch_app(const Entry& entry) {
 	}
 
 	if (!entry.aumid.empty()) {
+		std::cout << "Launch aumid " << std::string(entry.aumid.begin(), entry.aumid.end()) << "\n";
 		return launch_via_aumid(entry.aumid);
 	}
 
@@ -462,7 +454,7 @@ void GetAllApps() {
 
 	PROPERTYKEY PKEY_AUMI = { {0x9F4C2855,0x9F79,0x4B39,{0xA8,0xD0,0xE1,0xD4,0x2D,0xE1,0xD5,0xF3}}, 5 };
 
-	std::set<std::string> seenNames;
+	std::set<std::string> seenNames = {"Windows Software Development Kit"};
 
 	// --- Pass 1: .lnk scan (reliable exe paths for Win32 apps) ---
 	std::vector<std::wstring> startMenuPaths;
