@@ -1,5 +1,7 @@
 # StartWizard
 
+<img width="2256" height="1504" alt="image" src="https://github.com/user-attachments/assets/97e2fb6d-407f-4568-925f-4dedb2b5bd62" />
+
 ## What is it?
 StartWizard is a custom windows start menu. StartWizard intercepts the windows key presses, and then displays the menu on your display.
 
