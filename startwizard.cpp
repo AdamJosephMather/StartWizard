@@ -32,6 +32,8 @@ namespace fs = std::filesystem;
 #include <strsafe.h>
 #include <uxtheme.h>
 
+#include "MathParser.hpp"
+
 #pragma comment(lib, "Shell32.lib")
 #pragma comment(lib, "Ole32.lib")
 #pragma comment(lib, "user32.lib")
@@ -684,14 +686,17 @@ void recalculate() {
 	selected_id = 0;
 	scroll_vert = 0;
 	
-	std::string find;
-	current_search.toUTF8String(find);
-	find = toLower(find);
+	std::string upper;
+	current_search.toUTF8String(upper);
+	std::string find = toLower(upper);
 	
-	auto res = calcExpression(current_search);
-	if (res.first){
+	auto mp = MathParser();
+	auto state = mp.setup();
+	auto res = mp.RunLine(upper, state);
+	
+	if (res.worked){
 		Entry e;
-		e.name = doubleToUnicodeString_pretty(res.second);
+		e.name = doubleToUnicodeString_pretty(res.value);
 		e.name.toUTF8String(e.special);
 		e.keeptop = 2;
 		entries.push_back(e);
