@@ -199,6 +199,14 @@ void setDarkmode(bool drk) {
 	}
 }
 
+void setWindows(bool win) {
+	if (win) {
+		SaveSetting(L"key", L"windows");
+	}else {
+		SaveSetting(L"key", L"ctrl_space");
+	}
+}
+
 GLuint HBitmapToTexture(HBITMAP hBitmap) {
 	if (!hBitmap) return 0;
 
@@ -294,6 +302,10 @@ bool launch_app(const Entry& entry) {
 			setDarkmode(true);
 		}else if (entry.special == "set_darkmode: false") {
 			setDarkmode(false);
+		}else if (entry.special == "use_windows_key") { // use_windows_key, use_ctrl_space
+			setWindows(true);
+		}else if (entry.special == "use_ctrl_space") {
+			setWindows(false);
 		}else if (entry.special.substr(0, 11) == "set_theme: ") {
 			std::string color = entry.special.substr(11);
 			std::wstring wstr(color.begin(), color.end());
@@ -740,7 +752,7 @@ void recalculate() {
 	if (!find.empty() && find[0] == ':'){
 		find = find.substr(1);
 		
-		std::vector<std::pair<std::string, std::string>> prs = {{":Set Dark Mode", "set_darkmode: true"}, {":Set Light Mode", "set_darkmode: false"}, {":Set Theme Gray", "set_theme: gray"}, {":Set Theme Light Blue", "set_theme: light_blue"}, {":Set Theme Blue", "set_theme: blue"}, {":Set Theme Light Orange", "set_theme: light_orange"}, {":Set Theme Orange", "set_theme: orange"}, {":Set Theme Light Green", "set_theme: light_green"}, {":Set Theme Green", "set_theme: green"}, {":Set Theme Light Pink", "set_theme: light_pink"}, {":Set Theme Pink", "set_theme: pink"}, {":Set Theme Light Purple", "set_theme: light_purple"}, {":Set Theme Purple", "set_theme: purple"}, {":Set Theme Light Teal", "set_theme: light_teal"}, {":Set Theme Teal", "set_theme: teal"}};
+		std::vector<std::pair<std::string, std::string>> prs = {{":Set Dark Mode", "set_darkmode: true"}, {":Set Light Mode", "set_darkmode: false"}, {":Set Theme Gray", "set_theme: gray"}, {":Set Theme Light Blue", "set_theme: light_blue"}, {":Set Theme Blue", "set_theme: blue"}, {":Set Theme Light Orange", "set_theme: light_orange"}, {":Set Theme Orange", "set_theme: orange"}, {":Set Theme Light Green", "set_theme: light_green"}, {":Set Theme Green", "set_theme: green"}, {":Set Theme Light Pink", "set_theme: light_pink"}, {":Set Theme Pink", "set_theme: pink"}, {":Set Theme Light Purple", "set_theme: light_purple"}, {":Set Theme Purple", "set_theme: purple"}, {":Set Theme Light Teal", "set_theme: light_teal"}, {":Set Theme Teal", "set_theme: teal"}, {":Use Windows Key", "use_windows_key"}, {":Use Control Space", "use_ctrl_space"}};
 		
 		for (std::pair<std::string, std::string> pr : prs) {
 			if (fuzzySearch(pr.first, find)) {
@@ -1105,34 +1117,61 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 		if (pKeyBoard->flags & LLKHF_INJECTED) {
 			return CallNextHookEx(hhkLowLevelKybd, nCode, wParam, lParam);
 		}
-
-		bool is_win = (pKeyBoard->vkCode == VK_LWIN || pKeyBoard->vkCode == VK_RWIN);
-
-		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
-			if (is_win) {
-				win_down = true;
-				win_used_in_combo = false;
-			} else if (win_down) {
-				win_used_in_combo = true;
+		
+		std::wstring keytype = LoadSetting(L"key", L"windows");
+		bool swapWindow = false;
+		bool window_visible = glfwGetWindowAttrib(window, GLFW_VISIBLE);
+		
+		bool keydown = wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN;
+		bool keyup = wParam == WM_KEYUP || wParam == WM_SYSKEYUP;
+		
+		if (keytype == L"ctrl_space") {
+			bool is_space = (pKeyBoard->vkCode == VK_SPACE);
+			bool is_ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+			
+			if (is_space && is_ctrl) {
+				if (keydown && !window_visible) {
+					swapWindow = true;
+					win_down = true; // indicates handled
+				}
+				
+				if (keyup && window_visible){
+					if (!win_down) {
+						swapWindow = true;
+					}
+					win_down = false;
+				}
 			}
-		}
-
-		if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
-			if (is_win) {
+		}else { // "windows" or anything else invalid
+			bool is_win = (pKeyBoard->vkCode == VK_LWIN || pKeyBoard->vkCode == VK_RWIN);
+			
+			if (keydown) {
+				if (is_win) {
+					win_down = true;
+					win_used_in_combo = false;
+				} else if (win_down) {
+					win_used_in_combo = true;
+				}
+			}
+	
+			if (keyup && is_win) {
 				win_down = false;
 				if (!win_used_in_combo) {
+					swapWindow = true;
 					std::cout << "Intercepted solo Windows Key! Suppressing Start Menu..." << std::endl;
-					
-					// we can't intercept the event because then the system think the windows key is still down. But, we can add some modifier that makes the start menu not open
-					keybd_event(0x07, 0, 0, 0); // 0x07 is undefined/reserved
-					keybd_event(0x07, 0, KEYEVENTF_KEYUP, 0);
-					
-					if (!glfwGetWindowAttrib(window, GLFW_VISIBLE)) {
-						show();
-					}else{
-						hide();
-					}
 				}
+			}
+		}
+		
+		if (swapWindow) {
+			// we can't intercept the event because then the system think the windows key is still down. But, we can add some modifier that makes the start menu not open
+			keybd_event(0x07, 0, 0, 0); // 0x07 is undefined/reserved
+			keybd_event(0x07, 0, KEYEVENTF_KEYUP, 0);
+			
+			if (!window_visible) {
+				show();
+			}else{
+				hide();
 			}
 		}
 	}
@@ -1167,7 +1206,7 @@ void character_callback(GLFWwindow* window, unsigned int codepoint) {
 	if (len > 0) { // there is something printable
 		// this doesn't detect newlines, tabs,
 		// we're going to handle all whitespace in the key down
-		if (ch == '\n' || ch == '\t') {
+		if (ch == '\n' || ch == '\t' || ch == ' ') {
 			return;
 		}
 		
@@ -1436,6 +1475,10 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 				hide();
 			}
 		}
+	}else if (key == GLFW_KEY_SPACE && !is_control_held) {
+		icu::UnicodeString to_insert;
+		to_insert.append(' ');
+		insertText(to_insert);
 	}
 }
 

@@ -1,4 +1,6 @@
 # ninja log v7
 149	3733	8130909654454344	CMakeFiles/StartWizard.dir/text_renderer.cpp.obj	8dc9c40ecf6eeea9
-77	12813	8130909653732270	CMakeFiles/StartWizard.dir/startwizard.cpp.obj	6789960554779dd7
-12814	15808	8130909781092221	StartWizard.exe	c4318e362224a9
+28	3386	8139817155874500	CMakeFiles/StartWizard.dir/startwizard.cpp.obj	6789960554779dd7
+3387	4256	8139817189455761	StartWizard.exe	c4318e362224a9
+22	3616	8139820172210311	CMakeFiles/StartWizard.dir/startwizard.cpp.obj	6789960554779dd7
+3617	4495	8139820208152884	StartWizard.exe	c4318e362224a9
